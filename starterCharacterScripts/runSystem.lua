@@ -41,6 +41,7 @@ local function downSpeed(character)
 	end
 end
 
+
 local function runoff (input, _gameProcessed)
 	local pressed_button = inputService:IsKeyDown(run_key)
 	if f and not pressed_button then
