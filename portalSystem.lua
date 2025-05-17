@@ -9,23 +9,26 @@ local guiInitializer = {}
 
 
 
-
+local dsService = game:GetService("DataStoreService")
 local tSevice = game:GetService("TeleportService")
 local players = game:GetService("Players")
 local rStorage = game:GetService("ReplicatedStorage")
+
+local dsMoney = dsService:GetOrderedDataStore("money")
+
 
 
 -- Default values if the developer doesn't set the input
 local defaultValues = {
 	maxPartySize = 4,
-	timeUntilTeleport = 15
+	timeUntilTeleport = 15,
+	moneyReward = 1
 }
 
 local tOptions = Instance.new("TeleportOptions")
 tOptions.ShouldReserveServer = true	-- This setting is needed for server reservation to create new server for the player
 
 local requestedPart = "Head" -- default part to check for player teleporting
-
 
 
 -- get player only if "requestedPart" is touched
@@ -39,13 +42,100 @@ function util.getPlayer(part)
 end
 
 
+-- add instance "money" to the player
+local function addLeaderstats(player)
+	local leaderboard = Instance.new("Folder")
+	leaderboard.Name = "leaderstats"
+	leaderboard.Parent = player
+
+	local money = Instance.new("IntValue")
+	money.Name = "money"
+	money.Value = 0
+	money.Parent = leaderboard
+end
+
+
+-- get player money instance, if not - create leaderstats
+local function getMoney(player)
+	if not player:FindFirstChild("leaderstats") then
+		addLeaderstats(player)
+	end
+	return player.leaderstats.money
+end
+
+
+-- add money to player
+local function addMoney(player, count)	
+	local money = getMoney(player)
+	money.Value += count
+end
+
+
+-- do "addMoney" to all players in the list
+local function addMoneyList(playerList, count)
+	for _, player in pairs(playerList) do
+		addMoney(player, count)
+	end
+end
+
+
+-- check if player have enough money
+local function canAfford(player, cost)
+	local money = getMoney(player)
+	return money.Value >= cost
+end
+
+
+-- save data to DS (money)
+local function saveData(player)
+	local key = player.UserId
+	local moneyValue = getMoney(player).Value
+
+	local success, err = pcall(function()
+		dsMoney:SetAsync(key, moneyValue)
+	end)
+
+	if not success then
+		warn("setAsync error:", tostring(err))
+		return
+	end
+end
+-- save data when player is leave
+players.PlayerRemoving:Connect(saveData)
+
+
+-- load data from DS (money)
+local function loadData(player)
+	local key = player.UserId
+	local moneyValue = 0
+
+	local success, err = pcall(function()
+		moneyValue = dsMoney:GetAsync(key)
+	end)
+	
+	if not success then
+		warn("getAsync error:" .. tostring(err))
+		player:Kick("failed to read data")
+		return
+	end
+	
+	local money = getMoney(player)
+	money.Value = moneyValue
+end
+-- load data when player is joined
+players.PlayerAdded:Connect(function(player)
+	task.wait(1)
+	loadData(player)
+end)
+
+
 -- manage gui and show portal capacity, playerCount and timer
 function guiInitializer.initGui(guiInstance:ScreenGui)
 
 	local gui = {
 		guiInstance = guiInstance
 	}
-	
+
 	function gui:updatePartyCount(players, partyCount, maxPartySize)
 		for _,player in pairs(players) do
 			local gui = player.PlayerGui:WaitForChild(self.guiInstance.Name)
@@ -100,6 +190,7 @@ function portalInitializer.initTeleport(placeID:NumberValue, guiInstance:ScreenG
 					if self.teleporting then
 						self.gui:updateTimer(self.playersList, i)
 						wait(1)
+						addMoneyList(self.playersList, defaultValues.moneyReward)
 					else
 						return
 					end
@@ -208,13 +299,13 @@ function initPortalFolders()
 	for _, portalFolder in pairs(portalFolders:GetDescendants()) do
 
 		if portalFolder:IsA("Folder") then
-			
+
 			local placeId = portalFolder:WaitForChild("placeID",0.05)
 			if placeId == nil then
 				warn("placeID is not declare in folder:",portalFolder.Name,"- SKIP FOLDER")
 				continue
 			end
-			
+
 			initPortals(portalFolder, placeId)	
 		end
 	end
