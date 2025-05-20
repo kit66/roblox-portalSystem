@@ -27,19 +27,6 @@ local defaultValues = {
 	moneyReward = 1
 }
 
-local requestedPart = "Head" -- default part to check for player teleporting
-
-
--- get player only if "requestedPart" is touched
-function util.getPlayer(part)
-
-	if part.Name ~= requestedPart then
-		return nil
-	end
-
-	return playersS:GetPlayerFromCharacter(part.Parent)
-end
-
 
 -- add instance "money" to the player
 function dataManager.addLeaderstats(player)
@@ -84,9 +71,7 @@ function dataManager:saveData(player)
 	local moneyValue = self:getMoney(player).Value
 
 	local success, err = pcall(function()
-		moneyDS:UpdateAsync(key, function(moneyBefore)
-			return (moneyBefore or 0) + moneyValue
-		end)
+		moneyDS:SetAsync(key, moneyValue)
 	end)
 
 	if not success then
@@ -179,14 +164,15 @@ function portalInitializer.initTeleport(placeID:NumberValue, guiInstance:ScreenG
 		if #self.playersList>0 then
 			-- if teleportation not active
 			if not self.teleporting then
-				self.teleporting = true
+				self.teleporting = true	
 				-- start timer
 				for i=self.timeUntilTeleport,0,-1 do
-					if self.teleporting then
+					if self.teleporting and #self.playersList>0 then
 						self.gui:updateTimer(self.playersList, i)
 						task.wait(1)
 						dataManager:addMoneyList(self.playersList, defaultValues.moneyReward)
 					else
+						self.teleporting = false
 						return
 					end
 				end
@@ -198,96 +184,68 @@ function portalInitializer.initTeleport(placeID:NumberValue, guiInstance:ScreenG
 				local tOptions = Instance.new("TeleportOptions")
 				tOptions.ShouldReserveServer = true	-- This setting is needed for server reservation to create new server for the player
 				tOptions:SetTeleportData(tData)
-				teleportS:TeleportAsync(self.placeID, self.playersList, tOptions)			
+				teleportS:TeleportAsync(self.placeID, self.playersList, tOptions)		
+				
+				self.teleporting = false
 			end
-		else
-			self.teleporting = false
 		end
 	end
 
-	function portal:manageParty(playerList)
-		
-	end
-
-
-	-- add player to the playersList 
-	function portal:addToParty(player)
-		-- check if partySize have slot for new player
-		if player and #self.playersList < self.maxPartySize then
-
-			table.insert(self.playersList,player)
-			self.gui:showGui(player)
-			self.gui:updatePartyCount(self.playersList, #self.playersList, self.maxPartySize)
-			self:manageTimer()
-		end
-	end
-
-	-- delete player from the players list
-	function portal:deleteFromParty(player)	
-
-		-- find player in the list
-		for i, playerInParty in ipairs(self.playersList) do
-			if player == playerInParty then
-
-				table.remove(self.playersList,i)
+	function portal:manageParty(overlappingPlayers)
+		for i, player in ipairs(self.playersList) do 
+			if overlappingPlayers[player] == nil  then
+				
+				table.remove(self.playersList, i)
 				self.gui:deleteGui(player)
 				self.gui:updatePartyCount(self.playersList, #self.playersList, self.maxPartySize)
 				self:manageTimer()
 				return
 			end
+			
 		end
+		
+		for player, _ in pairs(overlappingPlayers) do
+			if table.find(self.playersList,player) == nil and #self.playersList < self.maxPartySize then
+				table.insert(self.playersList, player)
+				self.gui:showGui(player)
+				self.gui:updatePartyCount(self.playersList, #self.playersList, self.maxPartySize)
+				self:manageTimer()
+			end
+		end
+		
 	end
-
-
 	return portal
 end
 
 
 local overlapParams = OverlapParams.new()
-overlapParams.FilterType                = Enum.RaycastFilterType.Include
-overlapParams.FilterDescendantsInstances = { workspace.Characters }
 
+local activePortals = {}
 -- main function that makes the object a teleporter and sets its settings
 function portalManager.manageTeleport(portalInstance:Instance, placeID:NumberValue, guiInstance:ScreenGui, maxPartySize:IntValue, timeUntilTeleport:IntValue)
 	local portal = portalInitializer.initTeleport(placeID,guiInstance, maxPartySize, timeUntilTeleport) 
-
 	-- portal entry
-	runS.Heartbeat:Connect(function(deltaTime)
-		local overlapping = workspace:GetPartsInPart(portalInstance, OverlapParams)
-    	local seen = {}
+	table.insert(activePortals, {portalInstance = portalInstance, portal = portal})
+end
+
+runS.Heartbeat:Connect(function()
+	for _, portal in ipairs(activePortals) do
+		local overlapping = workspace:GetPartsInPart(portal.portalInstance, overlapParams)
+		local overlappingPlayers = {}
 
 		for _, part in ipairs(overlapping) do
 			local char = part:FindFirstAncestorWhichIsA("Model")
 			if char then
 				local player = playersS:GetPlayerFromCharacter(char)
 				if player then
-					seen[player] = true
+					overlappingPlayers[player] = true
 				end
 			end
 		end
-		-- подумать как передать список
-		portal:manageParty(seen)
-	end)
-
-	portalInstance.Touched:Connect(function(part)
-		local player = util.getPlayer(part)
-		if player == nil then
-			return
-		end
-
-		portal:addToParty(player)
-	end)
-	-- portal exit
-	portalInstance.TouchEnded:Connect(function(part)
-		local player = util.getPlayer(part)
-		if player == nil then
-			return
-		end
-
-		portal:deleteFromParty(player)
-	end)
-end
-
+		portal.portal:manageParty(overlappingPlayers)
+	end
+	
+end)
 
 -------------------------------------------------------------------
 -- example how i use this module
