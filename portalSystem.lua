@@ -265,7 +265,8 @@ function portalManager.manageTeleport(portalInstance:Instance, placeID:NumberVal
 				end
 			end
 		end
-		portal:manageParty()
+		-- подумать как передать список
+		portal:manageParty(seen)
 	end)
 
 	portalInstance.Touched:Connect(function(part)
