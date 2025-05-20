@@ -244,8 +244,8 @@ runS.Heartbeat:Connect(function()
 		end
 		portal.portal:manageParty(overlappingPlayers)
 	end
-	
 end)
+
 
 -------------------------------------------------------------------
 -- example how i use this module
