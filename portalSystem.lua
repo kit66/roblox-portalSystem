@@ -10,12 +10,13 @@ local dataManager = {}
 
 
 
-local dsService = game:GetService("DataStoreService")
-local tSevice = game:GetService("TeleportService")
-local players = game:GetService("Players")
-local rStorage = game:GetService("ReplicatedStorage")
+local dataStoreS = game:GetService("DataStoreService")
+local teleportS = game:GetService("TeleportService")
+local playersS = game:GetService("Players")
+local replicatedStorageS = game:GetService("ReplicatedStorage")
+local runS    = game:GetService("RunService")
 
-local dsMoney = dsService:GetOrderedDataStore("money")
+local moneyDS = dataStoreS:GetDataStore("money")
 
 
 
@@ -25,9 +26,6 @@ local defaultValues = {
 	timeUntilTeleport = 15,
 	moneyReward = 1
 }
-
-local tOptions = Instance.new("TeleportOptions")
-tOptions.ShouldReserveServer = true	-- This setting is needed for server reservation to create new server for the player
 
 local requestedPart = "Head" -- default part to check for player teleporting
 
@@ -39,7 +37,7 @@ function util.getPlayer(part)
 		return nil
 	end
 
-	return players:GetPlayerFromCharacter(part.Parent)
+	return playersS:GetPlayerFromCharacter(part.Parent)
 end
 
 
@@ -74,7 +72,7 @@ end
 
 -- do "addMoney" to all players in the list
 function dataManager:addMoneyList(playerList, count)
-	for _, player in pairs(playerList) do
+	for _, player in ipairs(playerList) do
 		self:addMoney(player, count)
 	end
 end
@@ -86,7 +84,9 @@ function dataManager:saveData(player)
 	local moneyValue = self:getMoney(player).Value
 
 	local success, err = pcall(function()
-		dsMoney:SetAsync(key, moneyValue)
+		moneyDS:UpdateAsync(key, function(moneyBefore)
+			return (moneyBefore or 0) + moneyValue
+		end)
 	end)
 
 	if not success then
@@ -95,7 +95,7 @@ function dataManager:saveData(player)
 	end
 end
 -- save data when player is leave
-players.PlayerRemoving:Connect(function(player: Player) 
+playersS.PlayerRemoving:Connect(function(player: Player) 
 	dataManager:saveData(player)
 end)
 
@@ -106,7 +106,7 @@ function dataManager:loadData(player)
 	local moneyValue = 0
 
 	local success, err = pcall(function()
-		moneyValue = dsMoney:GetAsync(key)
+		moneyValue = moneyDS:GetAsync(key)
 	end)
 
 	if not success then
@@ -119,7 +119,7 @@ function dataManager:loadData(player)
 	money.Value = moneyValue
 end
 -- load data when player is joined
-players.PlayerAdded:Connect(function(player)
+playersS.PlayerAdded:Connect(function(player)
 	task.wait(1)
 	dataManager:loadData(player)
 end)
@@ -133,14 +133,14 @@ function guiInitializer.initGui(guiInstance:ScreenGui)
 	}
 
 	function gui:updatePartyCount(players, partyCount, maxPartySize)
-		for _,player in pairs(players) do
+		for _,player in ipairs(players) do
 			local gui = player.PlayerGui:WaitForChild(self.guiInstance.Name)
 			gui.playersCount.Text = partyCount.."/"..maxPartySize
 		end
 	end
 
 	function gui:updateTimer(players, timeLeft)
-		for _,player in pairs(players) do
+		for _,player in ipairs(players) do
 			local gui = player.PlayerGui:WaitForChild(self.guiInstance.Name)
 			gui.timer.Text = timeLeft.."s"
 		end
@@ -169,7 +169,6 @@ function portalInitializer.initTeleport(placeID:NumberValue, guiInstance:ScreenG
 		timeUntilTeleport = timeUntilTeleport or defaultValues.timeUntilTeleport,
 		placeID = placeID,
 
-		requestPart = defaultValues.requestPart,
 		teleporting = false,
 		playersList = {}	
 	}
@@ -185,7 +184,7 @@ function portalInitializer.initTeleport(placeID:NumberValue, guiInstance:ScreenG
 				for i=self.timeUntilTeleport,0,-1 do
 					if self.teleporting then
 						self.gui:updateTimer(self.playersList, i)
-						wait(1)
+						task.wait(1)
 						dataManager:addMoneyList(self.playersList, defaultValues.moneyReward)
 					else
 						return
@@ -195,12 +194,19 @@ function portalInitializer.initTeleport(placeID:NumberValue, guiInstance:ScreenG
 				local tData = {
 					playerCount = #self.playersList
 				}
+
+				local tOptions = Instance.new("TeleportOptions")
+				tOptions.ShouldReserveServer = true	-- This setting is needed for server reservation to create new server for the player
 				tOptions:SetTeleportData(tData)
-				tSevice:TeleportAsync(self.placeID, self.playersList, tOptions)			
+				teleportS:TeleportAsync(self.placeID, self.playersList, tOptions)			
 			end
 		else
 			self.teleporting = false
 		end
+	end
+
+	function portal:manageParty(playerList)
+		
 	end
 
 
@@ -230,18 +236,38 @@ function portalInitializer.initTeleport(placeID:NumberValue, guiInstance:ScreenG
 				return
 			end
 		end
-
 	end
+
 
 	return portal
 end
 
+
+local overlapParams = OverlapParams.new()
+overlapParams.FilterType                = Enum.RaycastFilterType.Include
+overlapParams.FilterDescendantsInstances = { workspace.Characters }
 
 -- main function that makes the object a teleporter and sets its settings
 function portalManager.manageTeleport(portalInstance:Instance, placeID:NumberValue, guiInstance:ScreenGui, maxPartySize:IntValue, timeUntilTeleport:IntValue)
 	local portal = portalInitializer.initTeleport(placeID,guiInstance, maxPartySize, timeUntilTeleport) 
 
 	-- portal entry
+	runS.Heartbeat:Connect(function(deltaTime)
+		local overlapping = workspace:GetPartsInPart(portalInstance, OverlapParams)
+    	local seen = {}
+
+		for _, part in ipairs(overlapping) do
+			local char = part:FindFirstAncestorWhichIsA("Model")
+			if char then
+				local player = playersS:GetPlayerFromCharacter(char)
+				if player then
+					seen[player] = true
+				end
+			end
+		end
+		portal:manageParty()
+	end)
+
 	portalInstance.Touched:Connect(function(part)
 		local player = util.getPlayer(part)
 		if player == nil then
@@ -278,21 +304,21 @@ function initPortal(portal, placeID)
 			return
 		end
 
-		portalManager.manageTeleport(teleportZone,placeID,rStorage.portalStorage.partyGui)
+		portalManager.manageTeleport(teleportZone,placeID,replicatedStorageS.portalStorage.partyGui)
 	end
 end
 
 -- initialize all portals in folder
 function initPortals(portalFolder, placeId)
 
-	for _, portal in pairs(portalFolder:GetDescendants()) do
+	for _, portal in ipairs(portalFolder:GetDescendants()) do
 		initPortal(portal, placeId.Value)
 	end
 end
 
 -- get folders with properties "placeId"
 function initPortalFolders()
-	for _, portalFolder in pairs(portalFolders:GetDescendants()) do
+	for _, portalFolder in ipairs(portalFolders:GetDescendants()) do
 
 		if portalFolder:IsA("Folder") then
 
@@ -312,8 +338,8 @@ initPortalFolders()
 
 -- 2) use only one line to create teleporter
 
-portalManager.manageTeleport(workspace.bigWhitePortal.teleportZone, 130643888530121, rStorage.portalStorage.partyGui, 2, 7) -- all settings (2 capacity, 7 seconds)
+portalManager.manageTeleport(workspace.bigWhitePortal.teleportZone, 130643888530121, replicatedStorageS.portalStorage.partyGui, 2, 7) -- all settings (2 capacity, 7 seconds)
 
-portalManager.manageTeleport(workspace.bigRedPortal.teleportZone, 94142630952968, rStorage.portalStorage.partyGui, nil, 40) -- default capacity, 11 seconds
+portalManager.manageTeleport(workspace.bigRedPortal.teleportZone, 94142630952968, replicatedStorageS.portalStorage.partyGui, nil, 40) -- default capacity, 11 seconds
 
-portalManager.manageTeleport(workspace.bigGreenPortal.teleportZone, 72467583695069, rStorage.portalStorage.partyGui) -- default time and size
+portalManager.manageTeleport(workspace.bigGreenPortal.teleportZone, 72467583695069, replicatedStorageS.portalStorage.partyGui) -- default time and size
