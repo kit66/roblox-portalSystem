@@ -237,7 +237,6 @@ function portalInitializer.initTeleport(placeID:NumberValue, guiInstance:ScreenG
 	return portal
 end
 
-
 local overlapParams = OverlapParams.new()
 local activePortals = {}
 
