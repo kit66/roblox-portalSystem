@@ -390,7 +390,7 @@ function initPortal(portal, placeID)
 		return
 	end
 
-	local teleportZone = portal:WaitForChild("teleportZone", 0.05)
+	local teleportZone = portal:FindFirstChild("teleportZone")
 	if teleportZone == nil then 
 		warn("Model:", portal.Name, "in", portal.Parent, "doesn't have instance: teleportZone - SKIP")	
 		return
