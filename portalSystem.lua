@@ -1,15 +1,10 @@
--- This script manages the teleport system and creates teleporters to other locations.
--- Stand on a teleporter and it will teleport you to another place.
--- Each teleporter has a capacity, and all players standing on it will be teleported together.
+-- define module for each subsystem
+local portalManager = {} -- teleport and timer logic
+local portalInitializer = {}  -- portal init
+local guiInitializer = {} -- gui init
+local dataManager = {} -- data manipulation
 
--- Define module tables for each subsystem
-local portalManager = {} -- core teleport and timer logic
-local portalInitializer = {}  -- init and configure portals
-local guiInitializer = {} -- show and update GUI elements
-local dataManager = {} -- save and load player data
-
-
--- defines services
+-- define services
 local dataStoreS = game:GetService("DataStoreService")
 local teleportS = game:GetService("TeleportService")
 local playersS = game:GetService("Players")
@@ -19,11 +14,10 @@ local marketPlaceS = game:GetService("MarketplaceService")
 local badgeS = game:GetService("BadgeService")
 
 
-
--- define data store with name "money"
+-- define dataStore
 local moneyDS = dataStoreS:GetDataStore("money")
 
--- default values if the developer doesn't set the input
+-- default values if not setted
 local defaultValues = {
 	maxPartySize = 4,
 	timeUntilTeleport = 15,
@@ -32,24 +26,23 @@ local defaultValues = {
 
 -- 1) money system
 
--- init the player money stat for the leaderboard
+-- init money statistics for the player
 function dataManager.initMoney(player)
-	-- leaderstats folder enables Roblox to show leaderboard in up-right corner
+	-- leaderstats - roblox gui in right top corner
 	local leaderboard = Instance.new("Folder")
 	leaderboard.Name = "leaderstats"
 	leaderboard.Parent = player
 
-	-- init IntValue to track player money. Default zero
+	-- init money instance for player. Default zero
 	local money = Instance.new("IntValue")
 	money.Name = "money"
 	money.Value = 0
 	money.Parent = leaderboard
 end
 
-
--- get player money instance, if not - create leaderstats
+-- get player money instance, if not- create
 function dataManager:getMoney(player)
-	-- check if player already have "leaderstats" instance
+	-- if player already have leaderstats
 	if not player:FindFirstChild("leaderstats") then
 		self.initMoney(player)
 	end
@@ -59,14 +52,13 @@ end
 
 -- add money to player
 function dataManager:addMoney(player, count)
-	-- get money from "leaderstats". Create "leaderstats" if not exits
+	-- get money instance
 	local money = self:getMoney(player)
-	-- add specific amount
 	money.Value += count
 end
 
 
---add specific amount money to every player in the list
+-- add money to everyone in the list
 function dataManager:addMoneyList(playerList, count)
 	for _, player in ipairs(playerList) do
 		self:addMoney(player, count)
@@ -75,15 +67,16 @@ end
 
 -- 2) storage system
 
--- save player money when they leave the game
+-- save data to dataStore
 function dataManager:saveData(player)
-	-- use userId as unique DS key for every player
+	-- use user ID as unique key for dataStore
 	local key = player.UserId
-	-- get player current money value
+	-- get current player money
 	local moneyValue = self:getMoney(player).Value
 
-	-- use SetAsync to save data (only on "PlayerRemoving" trigger to minimize contention)
+	-- save data
 	local success, err = pcall(function()
+		-- using SetAsync because only triggered when player leaves
 		moneyDS:SetAsync(key, moneyValue)
 	end)
 
@@ -92,20 +85,19 @@ function dataManager:saveData(player)
 		return
 	end
 end
--- enable data save func when player if removed from the game (exit, kick)
 playersS.PlayerRemoving:Connect(function(player: Player)
 	dataManager:saveData(player)
 end)
 
 
--- load player money when they join the game
+-- load data from dataStore
 function dataManager:loadData(player)
-	-- use userId as unique DS key for every player
+	-- use user ID as unique key for dataStore
 	local key = player.UserId
-	--- default value if player don't have data in DS
+	-- default value if data not found or new player
 	local moneyValue = 0
 
-	-- try to fetch money from DS; kick on failure to prevent desynced play
+	-- get data from dataStore. Kick if not succsess
 	local success, err = pcall(function()
 		moneyValue = moneyDS:GetAsync(key)
 	end)
@@ -115,27 +107,26 @@ function dataManager:loadData(player)
 		return
 	end
 
-	-- get money from "leaderstats". Create "leaderstats" if not exits
+	-- get player money
 	local money = self:getMoney(player)
 	money.Value = moneyValue
 end
--- enable data load func when player if added to the game
 playersS.PlayerAdded:Connect(function(player)
-	-- delay to let character and leaderstats load
+	-- delay to let player load before loading data
 	task.wait(1)
 	dataManager:loadData(player)
 end)
 
 -- 3) teleport system
 
--- init portal Gui methods (party count, timer, show/delete Gui)
+-- init Gui methods (party counter, timer, gui manipulation)
 function guiInitializer.initGui(guiInstance:ScreenGui)
 
 	local gui = {
 		guiInstance = guiInstance
 	}
 
-	-- update every players Gui with current party size
+	-- update player count in GUI every player
 	function gui:updatePartyCount(players, partyCount, maxPartySize)
 		for _,player in ipairs(players) do
 			local gui = player.PlayerGui:WaitForChild(self.guiInstance.Name)
@@ -143,7 +134,7 @@ function guiInitializer.initGui(guiInstance:ScreenGui)
 		end
 	end
 
-	-- update every players Gui countdown before teleport
+	-- update portal timer in GUI on every player
 	function gui:updateTimer(players, timeLeft)
 		for _,player in ipairs(players) do
 			local gui = player.PlayerGui:WaitForChild(self.guiInstance.Name)
@@ -151,12 +142,12 @@ function guiInitializer.initGui(guiInstance:ScreenGui)
 		end
 	end
 
-	-- clone gui template into the player
+	-- clone gui to the player
 	function gui:showGui(player)
 		self.guiInstance:Clone().Parent = player.PlayerGui
 	end
 
-	-- delete the portal Gui for a player
+	-- delete gui from the player
 	function gui:deleteGui(player)
 		player.PlayerGui:WaitForChild(self.guiInstance.Name):Destroy()	
 	end
@@ -166,13 +157,13 @@ end
 
 
 
--- create teleport controller that handle entry, countdown, rewards, and teleport
-function portalInitializer.initTeleport(placeID:NumberValue, guiInstance:ScreenGui, maxPartySize:IntValue, timeUntilTeleport:IntValue)
-	-- build the portal object with settings and state
+-- init teleport with entry, countdown, rewards and teleport handlers
+function portalInitializer.initTeleport(placeID:number, guiInstance:ScreenGui, maxPartySize:IntValue, timeUntilTeleport:IntValue)
+	-- create teleport object from params
 	local portal = {
 		gui = guiInitializer.initGui(guiInstance),
 
-		-- set default values if it not given
+		-- default values if not given
 		maxPartySize = maxPartySize or defaultValues.maxPartySize,
 		timeUntilTeleport = timeUntilTeleport or defaultValues.timeUntilTeleport,
 		placeID = placeID,
@@ -181,18 +172,18 @@ function portalInitializer.initTeleport(placeID:NumberValue, guiInstance:ScreenG
 		playersList = {}
 	}
 
-	-- start or resume the teleport countdown when someone inside.
+	-- start/end teleport
 	function portal:manageTimer()
 		if self.playersList == 0 or self.teleporting then 
 			return
 		end
 		
 		self.teleporting = true
-		-- reward players and update Gui each second. Stop if nobody in teleport
+		-- reward players each second. stop if teleport is emptyteleport
 		for i=self.timeUntilTeleport,0,-1 do
-			task.wait(1) -- wait before check to avoid join/exit farm
+			task.wait(1) -- wait before check to avoid join/exit spam
 
-			-- abort if everyone left
+			-- teleport is empty
 			if #self.playersList == 0 then
 				self.teleporting = false
 				return
@@ -202,7 +193,7 @@ function portalInitializer.initTeleport(placeID:NumberValue, guiInstance:ScreenG
 			dataManager:addMoneyList(self.playersList, defaultValues.moneyReward)
 		end
 
-		-- prepare teleport parameters for this party
+		-- init teleport parameters
 		local tData = {
 			playerCount = #self.playersList
 		}
@@ -210,14 +201,15 @@ function portalInitializer.initTeleport(placeID:NumberValue, guiInstance:ScreenG
 		tOptions.ShouldReserveServer = true
 		tOptions:SetTeleportData(tData)
 
-		-- teleport players to another place
+		-- do teleportation
 		teleportS:TeleportAsync(self.placeID, self.playersList, tOptions)
-		self.teleporting = false -- reset state to start new teleportation
+		-- reset teleport state
+		self.teleporting = false
 	end
 
-	-- add/remove players from playerList by checking overlapping
+	-- add/remove player when start/end overlapping
 	function portal:manageParty(overlappingPlayers)
-		-- remove players who left the portal
+		-- remove form party if not in overlapping list
 		for i, player in ipairs(self.playersList) do
 			if overlappingPlayers[player] ~= nil  then
 				continue
@@ -229,9 +221,9 @@ function portalInitializer.initTeleport(placeID:NumberValue, guiInstance:ScreenG
 			self:manageTimer()
 		end
 
-		-- add players who joined the portal and teleport has capasity
+		-- add to party if new player in overlapping
 		for player, _ in pairs(overlappingPlayers) do
-			
+
 			if table.find(self.playersList,player) == nil and #self.playersList < self.maxPartySize then
 				table.insert(self.playersList, player)
 				self.gui:showGui(player)
@@ -248,10 +240,10 @@ end
 local overlapParams = OverlapParams.new()
 local activePortals = {}
 
--- main function that register part as a teleport with its settings
-function portalManager.manageTeleport(portalInstance:Instance, placeID:String, guiInstance:ScreenGui, maxPartySize:IntValue, timeUntilTeleport:IntValue)
+-- main function that make portal from instance
+function portalManager.manageTeleport(portalInstance:Instance, placeID:number, guiInstance:ScreenGui, maxPartySize:IntValue, timeUntilTeleport:IntValue)
 	-- init portal logic (Gui, timer, capacity)
-	local portal = portalInitializer.initTeleport(placeID,guiInstance, maxPartySize, timeUntilTeleport) 
+	local portal = portalInitializer.initTeleport(placeID,guiInstance, maxPartySize, timeUntilTeleport)
 	-- track part and portal to check overlapping
 	table.insert(activePortals,
 		{portalInstance = portalInstance,
@@ -314,7 +306,7 @@ end
 
 
 
--- 5) shop system 
+-- 5) shop system
 
 -- products table
 local products = {
@@ -322,8 +314,8 @@ local products = {
 	coins400 = 3297566965
 }
 
--- map for each product to a function for handling purchases 
-local makePurchare = {
+-- map of handlers for each product
+local makepurchase = {
 	[products.coins5000] = function(player)
 		dataManager:addMoney(player, 5000)
 	end,
@@ -332,16 +324,12 @@ local makePurchare = {
 	end,
 }
 
--- when player trigger the shop prompt - open purchase
-local proximityShop = workspace.shop.ProximityPrompt
-
-proximityShop.Triggered:Connect(function(player)
+-- tiggers for purchase
+workspace.shop.ProximityPrompt.Triggered:Connect(function(player)
 	marketPlaceS:PromptProductPurchase(player, products.coins5000) 
 end)
 
-local proximitySmallShop = workspace.smallShop.ProximityPrompt
-
-proximitySmallShop.Triggered:Connect(function(player)
+workspace.smallShop.ProximityPrompt.Triggered:Connect(function(player)
 	marketPlaceS:PromptProductPurchase(player, products.coins400) 
 end)
 
@@ -354,28 +342,25 @@ local function process(info)
 	if not player then
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
-	
+
 	-- look up the handler for this product
-	local purchareFunction = makePurchare[info.ProductId]
-	if not purchareFunction then
+	local purchaseFunction = makepurchase[info.ProductId]
+	if not purchaseFunction then
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
-	
-	-- run purchase handler
-	local succsess, result = pcall(purchareFunction, player)
+
+	-- run handler
+	local succsess, result = pcall(purchaseFunction, player)
 	if not succsess then
-		warn("error while purcharing", info.ProductId)
+		warn("error while purchasing", info.ProductId)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 	
-	-- Checking if player already has the badge is not necessary
-	giveBadge(player, purchaseBadgeId)
+	giveBadge(player, purchaseBadgeId) -- checking if player already has badge - not necessary
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
 
 marketPlaceS.ProcessReceipt = process
-
-
 
 
 -------------------------------------------------------------------
@@ -431,8 +416,8 @@ initPortalFolders()
 
 -- use only one line to create teleporter
 
-portalManager.manageTeleport(workspace.bigWhitePortal.teleportZone, "130643888530121", replicatedStorageS.portalStorage.partyGui, 2, 7) -- all settings (2 capacity, 7 seconds)
+portalManager.manageTeleport(workspace.bigWhitePortal.teleportZone, 130643888530121, replicatedStorageS.portalStorage.partyGui, 2, 7) -- all settings (2 capacity, 7 seconds)
 
-portalManager.manageTeleport(workspace.bigRedPortal.teleportZone, "94142630952968", replicatedStorageS.portalStorage.partyGui, nil, 40) -- default capacity, 11 seconds
+portalManager.manageTeleport(workspace.bigRedPortal.teleportZone, 94142630952968, replicatedStorageS.portalStorage.partyGui, nil, 40) -- default capacity, 11 seconds
 
-portalManager.manageTeleport(workspace.bigGreenPortal.teleportZone, "72467583695069", replicatedStorageS.portalStorage.partyGui) -- default time and size
+portalManager.manageTeleport(workspace.bigGreenPortal.teleportZone, 72467583695069, replicatedStorageS.portalStorage.partyGui) -- default time and size
