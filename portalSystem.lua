@@ -268,6 +268,7 @@ function portalManager.manageTeleport(portalInstance:Instance, placeID:NumberVal
 		portal:manageParty()
 	end)
 
+	-- TODO отсюда забрать вместо heartbeat
 	portalInstance.Touched:Connect(function(part)
 		local player = util.getPlayer(part)
 		if player == nil then
