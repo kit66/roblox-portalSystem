@@ -121,6 +121,7 @@ end)
 
 -- init Gui methods (party counter, timer, gui manipulation)
 function guiInitializer.initGui(guiInstance:ScreenGui)
+	-- переделать  на триггеры к клиенту
 
 	local gui = {
 		guiInstance = guiInstance
@@ -174,7 +175,7 @@ function portalInitializer.initTeleport(placeID:number, guiInstance:ScreenGui, m
 
 	-- start/end teleport
 	function portal:manageTimer()
-		if self.playersList == 0 or self.teleporting then 
+		if self.playersList == 0 or self.teleporting then
 			return
 		end
 		
@@ -209,30 +210,36 @@ function portalInitializer.initTeleport(placeID:number, guiInstance:ScreenGui, m
 
 	-- add/remove player when start/end overlapping
 	function portal:manageParty(overlappingPlayers)
-		-- remove form party if not in overlapping list
-		for i, player in ipairs(self.playersList) do
-			if overlappingPlayers[player] ~= nil  then
+		local newPlayerList = {}
+		local currentPlayers = {}
+		-- don't insert player into new list if not overlapping
+		for _, player in ipairs(self.playersList) do
+			if overlappingPlayers[player] == nil  then
+				self.gui:deleteGui(player)
 				continue
 			end
 
-			table.remove(self.playersList, i)
-			self.gui:deleteGui(player)
-			self.gui:updatePartyCount(self.playersList, #self.playersList, self.maxPartySize)
-			self:manageTimer()
+			table.insert(newPlayerList, player)
+			currentPlayers[player] = true
 		end
+
 
 		-- add to party if new player in overlapping
 		for player, _ in pairs(overlappingPlayers) do
-
-			if table.find(self.playersList,player) == nil and #self.playersList < self.maxPartySize then
-				table.insert(self.playersList, player)
+			if not currentPlayers[player] and #newPlayerList < self.maxPartySize then
+				table.insert(newPlayerList, player)
+				-- TODO trigger gui
 				self.gui:showGui(player)
-				self.gui:updatePartyCount(self.playersList, #self.playersList, self.maxPartySize)
-				self:manageTimer()
 			end
 		end
 
+		-- update portal info
+		self.playersList = newPlayerList
+		-- TODO trigger gui
+		self.gui:updatePartyCount(self.playersList, #self.playersList, self.maxPartySize)
+		self:manageTimer()
 	end
+
 	return portal
 end
 
@@ -243,7 +250,7 @@ local activePortals = {}
 -- main function that make portal from instance
 function portalManager.manageTeleport(portalInstance:Instance, placeID:number, guiInstance:ScreenGui, maxPartySize:IntValue, timeUntilTeleport:IntValue)
 	-- init portal logic (Gui, timer, capacity)
-	local portal = portalInitializer.initTeleport(placeID,guiInstance, maxPartySize, timeUntilTeleport)
+	local portal = portalInitializer.initTeleport(placeID, guiInstance, maxPartySize, timeUntilTeleport)
 	-- track part and portal to check overlapping
 	table.insert(activePortals,
 		{portalInstance = portalInstance,
@@ -252,6 +259,7 @@ end
 
 -- every frame check who inside each portal
 runS.Heartbeat:Connect(function()
+	-- TODO передлать на touched
 	for _, portal in ipairs(activePortals) do
 		-- get all parts that overlapping portal
 		local overlapping = workspace:GetPartsInPart(portal.portalInstance, overlapParams)
@@ -355,7 +363,7 @@ local function process(info)
 		warn("error while purchasing", info.ProductId)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
-	
+
 	giveBadge(player, purchaseBadgeId) -- checking if player already has badge - not necessary
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
@@ -370,7 +378,7 @@ marketPlaceS.ProcessReceipt = process
 local portalFolders = workspace.portals
 
 -- make portal from model if model have instance "teleportZone"
-function initPortal(portal, placeID)
+function initPortal(portal, placeID:number)
 	if not portal:IsA("Model") then
 		return
 	end
@@ -386,10 +394,10 @@ function initPortal(portal, placeID)
 end
 
 -- initialize all portals in folder
-function initPortals(portalFolder, placeId)
+function initPortals(portalFolder, placeId:number)
 
 	for _, portal in ipairs(portalFolder:GetDescendants()) do
-		initPortal(portal, placeId.Value)
+		initPortal(portal, placeId)
 	end
 end
 
@@ -407,7 +415,7 @@ function initPortalFolders()
 			continue
 		end
 
-		initPortals(portalFolder, placeId)
+		initPortals(portalFolder, placeId.value)
 	end
 end
 
