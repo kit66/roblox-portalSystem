@@ -217,6 +217,7 @@ function portalManager.manageTeleport(portalInstance:Instance, placeID:number, m
 			return
 		end
 		
+		-- add to teleport list		
 		portal.playersList[player] = true	
 		portal.playersCount += 1
 		
@@ -247,7 +248,8 @@ function portalManager.manageTeleport(portalInstance:Instance, placeID:number, m
 		if not portal.playersList[player] then
 			return
 		end
-
+		
+		-- remove from teleport list
 		portal.playersList[player] = nil
 		portal.playersCount -= 1
 		
