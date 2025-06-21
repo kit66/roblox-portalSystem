@@ -226,7 +226,7 @@ function portalManager.manageTeleport(portalInstance:Instance, placeID:number, m
 			updatePlayerCountEvent:FireClient(player, portal.playersCount, portal.maxPartySize)
 		end
 
-		-- start teleport if first player joined
+		-- start teleport if first player
 		portal:manageTimer()
 	end)
 	
