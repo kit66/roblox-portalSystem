@@ -1,3 +1,6 @@
+-- SERVER SCRIPT
+-------------------------------------------------------------------
+
 -- define module for each subsystem
 local portalManager = {} -- teleport and timer logic
 local portalInitializer = {}  -- portal init
@@ -12,6 +15,13 @@ local replicatedStorageS = game:GetService("ReplicatedStorage")
 local runS    = game:GetService("RunService")
 local marketPlaceS = game:GetService("MarketplaceService")
 local badgeS = game:GetService("BadgeService")
+
+-- define remote events
+local showGuiEvent = replicatedStorageS.events:WaitForChild("showGui")
+local removeGuiEvent = replicatedStorageS.events:WaitForChild("removeGui")
+local updateTimerEvent = replicatedStorageS.events:WaitForChild("updateTimer")
+local updatePlayerCountEvent = replicatedStorageS.events:WaitForChild("updatePlayerCount")
+
 
 
 -- define dataStore
@@ -60,7 +70,7 @@ end
 
 -- add money to everyone in the list
 function dataManager:addMoneyList(playerList, count)
-	for _, player in ipairs(playerList) do
+	for player, _ in pairs(playerList) do
 		self:addMoney(player, count)
 	end
 end
@@ -94,8 +104,7 @@ end)
 function dataManager:loadData(player)
 	-- use user ID as unique key for dataStore
 	local key = player.UserId
-	-- default value if data not found or new player
-	local moneyValue = 0
+	local moneyValue
 
 	-- get data from dataStore. Kick if not succsess
 	local success, err = pcall(function()
@@ -109,7 +118,8 @@ function dataManager:loadData(player)
 
 	-- get player money
 	local money = self:getMoney(player)
-	money.Value = moneyValue
+	-- default value if data not found or new player
+	money.Value = moneyValue or 0
 end
 playersS.PlayerAdded:Connect(function(player)
 	-- delay to let player load before loading data
@@ -119,168 +129,138 @@ end)
 
 -- 3) teleport system
 
--- init Gui methods (party counter, timer, gui manipulation)
-function guiInitializer.initGui(guiInstance:ScreenGui)
-	-- переделать  на триггеры к клиенту
-
-	local gui = {
-		guiInstance = guiInstance
-	}
-
-	-- update player count in GUI every player
-	function gui:updatePartyCount(players, partyCount, maxPartySize)
-		for _,player in ipairs(players) do
-			local gui = player.PlayerGui:WaitForChild(self.guiInstance.Name)
-			gui.playersCount.Text = partyCount.."/"..maxPartySize
-		end
-	end
-
-	-- update portal timer in GUI on every player
-	function gui:updateTimer(players, timeLeft)
-		for _,player in ipairs(players) do
-			local gui = player.PlayerGui:WaitForChild(self.guiInstance.Name)
-			gui.timer.Text = timeLeft.."s"
-		end
-	end
-
-	-- clone gui to the player
-	function gui:showGui(player)
-		self.guiInstance:Clone().Parent = player.PlayerGui
-	end
-
-	-- delete gui from the player
-	function gui:deleteGui(player)
-		player.PlayerGui:WaitForChild(self.guiInstance.Name):Destroy()	
-	end
-
-	return gui
-end
-
-
-
 -- init teleport with entry, countdown, rewards and teleport handlers
-function portalInitializer.initTeleport(placeID:number, guiInstance:ScreenGui, maxPartySize:IntValue, timeUntilTeleport:IntValue)
+function portalInitializer.initTeleport(placeID:number, maxPartySize:number, timeUntilTeleport:number)
 	-- create teleport object from params
 	local portal = {
-		gui = guiInitializer.initGui(guiInstance),
-
 		-- default values if not given
 		maxPartySize = maxPartySize or defaultValues.maxPartySize,
 		timeUntilTeleport = timeUntilTeleport or defaultValues.timeUntilTeleport,
 		placeID = placeID,
 
 		teleporting = false,
-		playersList = {}
+		playersList = {},
+		playersCount = 0
 	}
 
 	-- start/end teleport
 	function portal:manageTimer()
-		if self.playersList == 0 or self.teleporting then
+		if self.playersCount == 0 or self.teleporting then
 			return
 		end
-		
+
 		self.teleporting = true
 		-- reward players each second. stop if teleport is emptyteleport
 		for i=self.timeUntilTeleport,0,-1 do
 			task.wait(1) -- wait before check to avoid join/exit spam
 
 			-- teleport is empty
-			if #self.playersList == 0 then
+			if self.playersCount == 0 then
 				self.teleporting = false
 				return
 			end
-
-			self.gui:updateTimer(self.playersList, i)
+			
+			-- fire to every player in teleport
+			for player, _ in pairs(self.playersList) do
+				updateTimerEvent:FireClient(player, i)
+			end
+			
 			dataManager:addMoneyList(self.playersList, defaultValues.moneyReward)
 		end
 
 		-- init teleport parameters
 		local tData = {
-			playerCount = #self.playersList
+			playerCount = self.playersCount
 		}
 		local tOptions = Instance.new("TeleportOptions")
 		tOptions.ShouldReserveServer = true
 		tOptions:SetTeleportData(tData)
-
+		
+		local players = {}
+		-- collect teleport list from map
+		for player, _ in pairs(self.playersList) do
+			table.insert(players, player)	
+		end
+		
 		-- do teleportation
-		teleportS:TeleportAsync(self.placeID, self.playersList, tOptions)
+		teleportS:TeleportAsync(self.placeID, players, tOptions)
+		
 		-- reset teleport state
 		self.teleporting = false
+		self.playersList = {}
+		self.playersCount = 0
 	end
-
-	-- add/remove player when start/end overlapping
-	function portal:manageParty(overlappingPlayers)
-		local newPlayerList = {}
-		local currentPlayers = {}
-		-- don't insert player into new list if not overlapping
-		for _, player in ipairs(self.playersList) do
-			if overlappingPlayers[player] == nil  then
-				self.gui:deleteGui(player)
-				continue
-			end
-
-			table.insert(newPlayerList, player)
-			currentPlayers[player] = true
-		end
-
-
-		-- add to party if new player in overlapping
-		for player, _ in pairs(overlappingPlayers) do
-			if not currentPlayers[player] and #newPlayerList < self.maxPartySize then
-				table.insert(newPlayerList, player)
-				-- TODO trigger gui
-				self.gui:showGui(player)
-			end
-		end
-
-		-- update portal info
-		self.playersList = newPlayerList
-		-- TODO trigger gui
-		self.gui:updatePartyCount(self.playersList, #self.playersList, self.maxPartySize)
-		self:manageTimer()
-	end
-
+	
 	return portal
 end
 
-
-local overlapParams = OverlapParams.new()
-local activePortals = {}
-
 -- main function that make portal from instance
-function portalManager.manageTeleport(portalInstance:Instance, placeID:number, guiInstance:ScreenGui, maxPartySize:IntValue, timeUntilTeleport:IntValue)
-	-- init portal logic (Gui, timer, capacity)
-	local portal = portalInitializer.initTeleport(placeID, guiInstance, maxPartySize, timeUntilTeleport)
-	-- track part and portal to check overlapping
-	table.insert(activePortals,
-		{portalInstance = portalInstance,
-			portal = portal})
-end
+function portalManager.manageTeleport(portalInstance:Instance, placeID:number, maxPartySize:number, timeUntilTeleport:number)
+	-- init portal logic (Gui events, timer, capacity)
+	local portal = portalInitializer.initTeleport(placeID, maxPartySize, timeUntilTeleport)
 
--- every frame check who inside each portal
-runS.Heartbeat:Connect(function()
-	-- TODO передлать на touched
-	for _, portal in ipairs(activePortals) do
-		-- get all parts that overlapping portal
-		local overlapping = workspace:GetPartsInPart(portal.portalInstance, overlapParams)
-		local overlappingPlayers = {}
-
-		-- get map of players that overplapping the portal
-		for _, part in ipairs(overlapping) do
-			local char = part:FindFirstAncestorWhichIsA("Model") -- check only "model" instances to optimize loop
-			if not char then
-				continue
-			end
-
-			local player = playersS:GetPlayerFromCharacter(char)
-			if player then
-				overlappingPlayers[player] = true
-			end
+	-- portal enter
+	portalInstance.Touched:Connect(function(part)
+		local char = part:FindFirstAncestorWhichIsA("Model") -- check only "model" instances to optimize loop
+		if not char then
+			return
 		end
-		portal.portal:manageParty(overlappingPlayers)
-	end
-end)
+		
+		-- get player who touched
+		local player = playersS:GetPlayerFromCharacter(char)
+		if not player then
+			return
+		end
+		
+		-- check if already in the teleport
+		if portal.playersList[player] then
+			return
+		end
+		
+		portal.playersList[player] = true	
+		portal.playersCount += 1
+		
+		-- update gui
+		showGuiEvent:FireClient(player)	
+		for player, _ in pairs(portal.playersList) do
+			updatePlayerCountEvent:FireClient(player, portal.playersCount, portal.maxPartySize)
+		end
 
+
+		portal:manageTimer()
+	end)
+	
+	-- portal exit
+	portalInstance.TouchEnded:Connect(function(part)
+		local char = part:FindFirstAncestorWhichIsA("Model") -- check only "model" instances to optimize loop
+		if not char then
+			return
+		end
+
+		-- get player who touched
+		local player = playersS:GetPlayerFromCharacter(char)
+		if not player then
+			return
+		end
+		
+		-- check if already in the teleport
+		if not portal.playersList[player] then
+			return
+		end
+
+		portal.playersList[player] = nil
+		portal.playersCount -= 1
+		
+		-- update gui
+		removeGuiEvent:FireClient(player)
+		for player, _ in pairs(portal.playersList) do
+			updatePlayerCountEvent:FireClient(player, portal.playersCount, portal.maxPartySize)
+		end
+		
+		
+		portal:manageTimer()
+	end)
+end
 
 -- 4) badge system
 
@@ -302,7 +282,7 @@ local function giveBadge(player, badgeId)
 	if not badgeInfo.IsEnabled then
 		return
 	end
-	
+
 	-- Try to award the badge
 	local awardSuccess, result = pcall(function()
 		return badgeS:AwardBadge(player.UserId, badgeId)
@@ -371,10 +351,49 @@ end
 marketPlaceS.ProcessReceipt = process
 
 
+-- CLIENT SCRIPT
 -------------------------------------------------------------------
--- example
---  make portals from the folder teleport to different locations using default settings
+local replicatedStorageS = game:GetService("ReplicatedStorage")
+local playersS = game:GetService("Players")
 
+local showGuiEvent = replicatedStorageS.events:WaitForChild("showGui")
+local removeGuiEvent = replicatedStorageS.events:WaitForChild("removeGui")
+local updateTimerEvent = replicatedStorageS.events:WaitForChild("updateTimer")
+local updatePlayerCountEvent = replicatedStorageS.events:WaitForChild("updatePlayerCount")
+
+local replicatedGui = replicatedStorageS.portalStorage.partyGui
+
+local player = playersS.LocalPlayer
+local currentGui
+
+showGuiEvent.OnClientEvent:Connect(function() 
+	currentGui = replicatedGui:Clone()
+	currentGui.Parent = player.PlayerGui
+end)
+
+removeGuiEvent.OnClientEvent:Connect(function() 
+	currentGui:Destroy()
+	currentGui = nil
+end)
+
+updateTimerEvent.OnClientEvent:Connect(function(timeLeft) 
+	if not currentGui  then
+		return
+	end
+	currentGui.timer.Text = timeLeft.."s"
+end)
+
+updatePlayerCountEvent.OnClientEvent:Connect(function(playerCount, maxPartySize)
+	if not currentGui  then
+		return
+	end
+	currentGui.playersCount.Text = playerCount.."/"..maxPartySize
+end)
+
+
+-- USAGE EXAMPLE: SERVER SIDE TELEPORT INITIALIZATION
+-------------------------------------------------------------------
+--  make portals from the folder teleport to different locations using default settings
 local portalFolders = workspace.portals
 
 -- make portal from model if model have instance "teleportZone"
@@ -389,7 +408,7 @@ function initPortal(portal, placeID:number)
 		return
 	end
 
-	portalManager.manageTeleport(teleportZone,placeID,replicatedStorageS.portalStorage.partyGui)
+	portalManager.manageTeleport(teleportZone,placeID)
 
 end
 
@@ -405,13 +424,14 @@ end
 function initPortalFolders()
 	for _, portalFolder in ipairs(portalFolders:GetDescendants()) do
 
-		if not  portalFolder:IsA("Folder") then
-			return
+		if not portalFolder:IsA("Folder") then
+			warn("not a folder:", portalFolder.Name,"- SKIP")
+			continue
 		end
 
 		local placeId = portalFolder:FindFirstChild("placeID")
 		if placeId == nil then
-			warn("placeID is not declare in folder:",portalFolder.Name,"- SKIP FOLDER")
+			warn("placeID is not declare in folder:", portalFolder.Name,"- SKIP FOLDER")
 			continue
 		end
 
@@ -424,8 +444,8 @@ initPortalFolders()
 
 -- use only one line to create teleporter
 
-portalManager.manageTeleport(workspace.bigWhitePortal.teleportZone, 130643888530121, replicatedStorageS.portalStorage.partyGui, 2, 7) -- all settings (2 capacity, 7 seconds)
+portalManager.manageTeleport(workspace.bigWhitePortal.teleportZone, 130643888530121, 2, 7) -- all settings (2 capacity, 7 seconds)
 
-portalManager.manageTeleport(workspace.bigRedPortal.teleportZone, 94142630952968, replicatedStorageS.portalStorage.partyGui, nil, 40) -- default capacity, 11 seconds
+portalManager.manageTeleport(workspace.bigRedPortal.teleportZone, 94142630952968, nil, 5) -- default capacity, 11 seconds
 
-portalManager.manageTeleport(workspace.bigGreenPortal.teleportZone, 72467583695069, replicatedStorageS.portalStorage.partyGui) -- default time and size
+portalManager.manageTeleport(workspace.bigGreenPortal.teleportZone, 72467583695069) -- default time and size
