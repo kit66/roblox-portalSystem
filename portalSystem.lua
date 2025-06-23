@@ -27,74 +27,6 @@ local updatePlayerCountEvent = replicatedStorageS.events:WaitForChild("updatePla
 -- define dataStore
 local moneyDS = dataStoreS:GetDataStore("money")
 
--- default values if not setted
-local defaultValues = {
-	maxPartySize = 4,
-	timeUntilTeleport = 15,
-	moneyReward = 1
-}
-
--- 1) money system
-
--- init money statistics for the player
-function dataManager.initMoney(player)
-	-- leaderstats - roblox gui in right top corner
-	local leaderboard = Instance.new("Folder")
-	leaderboard.Name = "leaderstats"
-	leaderboard.Parent = player
-
-	-- init money instance for player. Default zero
-	local money = Instance.new("IntValue")
-	money.Name = "money"
-	money.Value = 0
-	money.Parent = leaderboard
-end
-
--- get player money instance, if not- create
-function dataManager:getMoney(player)
-	-- if player already have leaderstats
-	if not player:FindFirstChild("leaderstats") then
-		self.initMoney(player)
-	end
-	return player.leaderstats.money
-end
-
-
--- add money to player
-function dataManager:addMoney(player, count)
-	-- get money instance
-	local money = self:getMoney(player)
-	money.Value += count
-end
-
-
--- add money to everyone in the list
-function dataManager:addMoneyList(playerList, count)
-	for player, _ in pairs(playerList) do
-		self:addMoney(player, count)
-	end
-end
-
--- 2) storage system
-
--- save data to dataStore
-function dataManager:saveData(player)
-	-- use user ID as unique key for dataStore
-	local key = player.UserId
-	-- get current player money
-	local moneyValue = self:getMoney(player).Value
-
-	-- save data
-	local success, err = pcall(function()
-		-- using SetAsync because only triggered when player leaves
-		moneyDS:SetAsync(key, moneyValue)
-	end)
-
-	if not success then
-		warn("Failed to save money. userID:", key ," error:", tostring(err))
-		return
-	end
-end
 playersS.PlayerRemoving:Connect(function(player: Player)
 	dataManager:saveData(player)
 end)
@@ -127,73 +59,6 @@ playersS.PlayerAdded:Connect(function(player)
 	dataManager:loadData(player)
 end)
 
--- 3) teleport system
-
--- init teleport with entry, countdown, rewards and teleport handlers
-function portalInitializer.initTeleport(placeID:number, maxPartySize:number, timeUntilTeleport:number)
-	-- create teleport object from params
-	local portal = {
-		-- default values if not given
-		maxPartySize = maxPartySize or defaultValues.maxPartySize,
-		timeUntilTeleport = timeUntilTeleport or defaultValues.timeUntilTeleport,
-		placeID = placeID,
-
-		teleporting = false,
-		playersList = {},
-		playersCount = 0
-	}
-
-	-- start/end teleport
-	function portal:manageTimer()
-		if self.playersCount == 0 or self.teleporting then
-			return
-		end
-
-		self.teleporting = true
-		-- reward players each second. stop if teleport is emptyteleport
-		for i=self.timeUntilTeleport,0,-1 do
-			task.wait(1) -- wait before check to avoid join/exit spam
-
-			-- teleport is empty
-			if self.playersCount == 0 then
-				self.teleporting = false
-				return
-			end
-			
-			-- fire to every player in teleport
-			for player, _ in pairs(self.playersList) do
-				updateTimerEvent:FireClient(player, i)
-			end
-			
-			dataManager:addMoneyList(self.playersList, defaultValues.moneyReward)
-		end
-
-		-- init teleport parameters
-		local tData = {
-			playerCount = self.playersCount
-		}
-		local tOptions = Instance.new("TeleportOptions")
-		tOptions.ShouldReserveServer = true
-		tOptions:SetTeleportData(tData)
-		
-		local players = {}
-		-- collect teleport list from map
-		for player, _ in pairs(self.playersList) do
-			table.insert(players, player)	
-		end
-		
-		-- do teleportation
-		teleportS:TeleportAsync(self.placeID, players, tOptions)
-		
-		-- reset teleport state
-		self.teleporting = false
-		self.playersList = {}
-		self.playersCount = 0
-	end
-	
-	return portal
-end
-
 -- main function that make portal from instance
 function portalManager.manageTeleport(portalInstance:Instance, placeID:number, maxPartySize:number, timeUntilTeleport:number)
 	-- init portal logic (Gui events, timer, capacity)
@@ -205,30 +70,15 @@ function portalManager.manageTeleport(portalInstance:Instance, placeID:number, m
 		if not char then
 			return
 		end
-		
+
 		-- get player who touched
 		local player = playersS:GetPlayerFromCharacter(char)
 		if not player then
 			return
 		end
-		
-		-- check if already in the teleport
-		if portal.playersList[player] then
-			return
-		end
-		
-		-- add to teleport list		
-		portal.playersList[player] = true	
-		portal.playersCount += 1
-		
-		-- update gui
-		showGuiEvent:FireClient(player)	
-		for player, _ in pairs(portal.playersList) do
-			updatePlayerCountEvent:FireClient(player, portal.playersCount, portal.maxPartySize)
-		end
 
 		-- start teleport if first player
-		portal:manageTimer()
+		portal:AddPlayer(player)
 	end)
 	
 	-- portal exit
@@ -243,24 +93,8 @@ function portalManager.manageTeleport(portalInstance:Instance, placeID:number, m
 		if not player then
 			return
 		end
-		
-		-- check if already in the teleport
-		if not portal.playersList[player] then
-			return
-		end
-		
-		-- remove from teleport list
-		portal.playersList[player] = nil
-		portal.playersCount -= 1
-		
-		-- update gui
-		removeGuiEvent:FireClient(player)
-		for player, _ in pairs(portal.playersList) do
-			updatePlayerCountEvent:FireClient(player, portal.playersCount, portal.maxPartySize)
-		end
-		
 		-- stop teleport if nobody in
-		portal:manageTimer()
+		portal:RemovePlayer(player)
 	end)
 end
 
@@ -353,55 +187,6 @@ end
 marketPlaceS.ProcessReceipt = process
 
 
--- CLIENT SCRIPT
--------------------------------------------------------------------
--- define services
-local replicatedStorageS = game:GetService("ReplicatedStorage")
-local playersS = game:GetService("Players")
-
--- define remote events
-local showGuiEvent = replicatedStorageS.events:WaitForChild("showGui")
-local removeGuiEvent = replicatedStorageS.events:WaitForChild("removeGui")
-local updateTimerEvent = replicatedStorageS.events:WaitForChild("updateTimer")
-local updatePlayerCountEvent = replicatedStorageS.events:WaitForChild("updatePlayerCount")
-
--- define variables
-local replicatedGui = replicatedStorageS.portalStorage.partyGui
-
-local player = playersS.LocalPlayer
-local currentGui
-
--- give gui to the player with teleport time and players count when touched the portal
-showGuiEvent.OnClientEvent:Connect(function() 
-	currentGui = replicatedGui:Clone()
-	currentGui.Parent = player.PlayerGui
-end)
-
--- remove gui when exit the portal
-removeGuiEvent.OnClientEvent:Connect(function() 
-	currentGui:Destroy()
-	currentGui = nil
-end)
-
--- update timer in gui every second
-updateTimerEvent.OnClientEvent:Connect(function(timeLeft) 
-	-- gui exists
-	if not currentGui  then
-		return
-	end
-	currentGui.timer.Text = timeLeft.."s"
-end)
-
--- update player count in gui when somebody joined/removed
-updatePlayerCountEvent.OnClientEvent:Connect(function(playerCount, maxPartySize)
-	-- gui exists
-	if not currentGui  then
-		return
-	end
-	currentGui.playersCount.Text = playerCount.."/"..maxPartySize
-end)
-
-
 -- USAGE EXAMPLE: SERVER SIDE TELEPORT INITIALIZATION
 -------------------------------------------------------------------
 --  make portals from the folder teleport to different locations using default settings
@@ -415,7 +200,7 @@ function initPortal(portal, placeID:number)
 
 	local teleportZone = portal:FindFirstChild("teleportZone")
 	if teleportZone == nil then 
-		warn("Model:", portal.Name, "in", portal.Parent, "doesn't have instance: teleportZone - SKIP")	
+		warn("Model:", portal.Name, "in", portal.Parent, "doesn't have instance: teleportZone - SKIP")
 		return
 	end
 
