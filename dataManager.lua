@@ -62,3 +62,25 @@ function dataManager:saveData(player)
 		return
 	end
 end
+
+-- load data from dataStore
+function dataManager:loadData(player)
+	-- use user ID as unique key for dataStore
+	local key = player.UserId
+	local moneyValue
+
+	-- get data from dataStore. Kick if not succsess
+	local success, err = pcall(function()
+		moneyValue = moneyDS:GetAsync(key)
+	end)
+	if not success then
+		warn("Failed to load money. userID:", key ," error:", tostring(err))
+		player:Kick("Error occured. Please, rejoin the game")
+		return
+	end
+
+	-- get player money
+	local money = self:getMoney(player)
+	-- default value if data not found or new player
+	money.Value = moneyValue or 0
+end
