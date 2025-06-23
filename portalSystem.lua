@@ -24,7 +24,7 @@ playersS.PlayerAdded:Connect(function(player)
 end)
 
 -- main function that make portal from instance
-function portalManager.man	ageTeleport(portalInstance:Instance, placeID:number, maxPartySize:number, timeUntilTeleport:number)
+function portalManager.manageTeleport(portalInstance:Instance, placeID:number, maxPartySize:number, timeUntilTeleport:number)
 	-- init portal logic (Gui events, timer, capacity)
 	local portal = portalInitializer.initTeleport(placeID, maxPartySize, timeUntilTeleport)
 
