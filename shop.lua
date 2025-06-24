@@ -1,34 +1,25 @@
 local marketPlaceS = game:GetService("MarketplaceService")
-
-local products = {
-	coins5000 = 3297475576,
-	coins400 = 3297566965
-}
-
--- TODO сделать функцию которая будет создавать продукт по ID и ProximityPrompt
--- map of handlers for each product
-local makepurchase = {
-	[products.coins5000] = function(player)
-		dataManager:addMoney(player, 5000)
-	end,
-	[products.coins400] = function(player)
-		dataManager:addMoney(player, 400)
-	end,
-}
-
--- tiggers for purchase
-workspace.shop.ProximityPrompt.Triggered:Connect(function(player)
-	marketPlaceS:PromptProductPurchase(player, products.coins5000) 
-end)
-
-workspace.smallShop.ProximityPrompt.Triggered:Connect(function(player)
-	marketPlaceS:PromptProductPurchase(player, products.coins400) 
-end)
+local badgeS = game:GetService("BadgeService")
+local playersS = game:GetService("Players")
 
 
+local Shop = {}
+Shop.productsList = {}
+Shop.BadgeId = 3225353430882368
+
+local ProductsList = {}
+
+
+function Shop:createProduct(productId, ProximityPrompt:ProximityPrompt, handler)
+	self.productsList[productId] = handler
+	
+	ProximityPrompt.Triggered:Connect(function(playerWhoTriggered)
+		marketPlaceS:PromptProductPurchase(playerWhoTriggered, productId)
+	end)
+end
 
 -- handle purchases
-local function process(info)
+function Shop:process(info)
 	-- theck that the player is still in game
 	local player = playersS:GetPlayerByUserId(info.PlayerId)
 	if not player then
@@ -36,7 +27,7 @@ local function process(info)
 	end
 
 	-- look up the handler for this product
-	local purchaseFunction = makepurchase[info.ProductId]
+	local purchaseFunction = self.ProductsList[info.ProductId]
 	if not purchaseFunction then
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
@@ -48,8 +39,21 @@ local function process(info)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
-	giveBadge(player, purchaseBadgeId) -- checking if player already has badge - not necessary
+	badgeS:AwardBadge(info.PlayerId, self.BadgeId)
 	return Enum.ProductPurchaseDecision.PurchaseGranted
 end
 
-marketPlaceS.ProcessReceipt = process
+marketPlaceS.ProcessReceipt = Shop.process
+
+-- TODO перекинуть в мейн
+local products = {
+	coins5000 = 3297475576,
+	coins400 = 3297566965
+}
+
+Shop.createDonate(products.coins5000, workspace.shop.ProximityPrompt, function()
+	dataManager:addMoney(player, 5000)
+end)
+Shop.createDonate(products.coins5000, workspace.smallShop.ProximityPrompt, function()
+	dataManager:addMoney(player, 5000)
+end)

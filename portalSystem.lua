@@ -1,7 +1,4 @@
--- SERVER SCRIPT
--------------------------------------------------------------------
-
--- define module for each subsystem
+-- define module
 local portalManager = {} -- teleport and timer logic
 local portalInitializer = {}  -- portal init
 local dataManager = {} -- data manipulation
@@ -61,14 +58,6 @@ function portalManager.manageTeleport(portalInstance:Instance, placeID:number, m
 		portal:RemovePlayer(player)
 	end)
 end
-
--- 4) badge system
-
--- 5) shop system
-
--- products table
-
-
 
 -- USAGE EXAMPLE: SERVER SIDE TELEPORT INITIALIZATION
 -------------------------------------------------------------------
