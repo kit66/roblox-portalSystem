@@ -45,7 +45,7 @@ end
 
 marketPlaceS.ProcessReceipt = Shop.process
 
--- TODO перекинуть в мейн
+-- TODO перекинуть в мейн всё что ниже
 local products = {
 	coins5000 = 3297475576,
 	coins400 = 3297566965
