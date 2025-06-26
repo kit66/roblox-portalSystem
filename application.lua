@@ -395,6 +395,9 @@ end)
 local RS = game:GetService("ReplicatedStorage")
 local TweenS = game:GetService("TweenService")
 
+dataManager = require(script.Parent.Parent.modules.dataManager)
+
+
 -- set default position to perform animation
 local magicBlock = workspace:WaitForChild("magicBlock")
 local defaultPosition = magicBlock.Position
@@ -402,13 +405,14 @@ local defaultPosition = magicBlock.Position
 local config = {
 	jiggleDistance = -5,
 	animationDuration = 3,
-	animationType = Enum.EasingStyle.Elastic
+	animationType = Enum.EasingStyle.Elastic,
+	moneyReward = 2
 }
 
 
 
 -- make object 'jiggle' on activation
-local function doAnimation(player,object, direction)
+local function doAnimation(player, object, direction)
 	if object ~= magicBlock then -- save server-side check 
 		return
 	end
@@ -422,7 +426,9 @@ local function doAnimation(player,object, direction)
 	
 	-- do animation without checking completion - it's gonna return to default postion anyway
 	tween:Play()
-
+	
+	-- add money to the player
+	dataManager:addMoney(player, config.moneyReward)
 end
 
 -- connect event to animation function
