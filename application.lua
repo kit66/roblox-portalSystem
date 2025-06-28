@@ -187,7 +187,7 @@ function dataManager:addMoneyList(playerList, count)
 	end
 end
 
--- 2) SERVER SIDE
+-- 2)
 -- managers
 ------------------------------------------------------
 
