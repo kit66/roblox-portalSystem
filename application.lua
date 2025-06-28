@@ -1,150 +1,6 @@
 -- 1) SERVER SIDE
+-- MODULES
 ------------------------------------------------------
--- dataManager
-------------------------------------------------------
-
-local dataStoreS = game:GetService("DataStoreService")
-local moneyDS = dataStoreS:GetDataStore("money")
-
-dataManager = {}
-
--- init money statistics for the player
-function dataManager._initMoney(player)
-	-- leaderstats - roblox gui in right top corner
-	local leaderboard = Instance.new("Folder")
-	leaderboard.Name = "leaderstats"
-	leaderboard.Parent = player
-
-	-- init money instance for player. Default zero
-	local money = Instance.new("IntValue")
-	money.Name = "money"
-	money.Value = 0
-	money.Parent = leaderboard
-end
-
--- get player money instance, if not- create
-function dataManager:getMoney(player)
-	-- if player already have leaderstats
-	if not player:FindFirstChild("leaderstats") then
-		self._initMoney(player)
-	end
-	return player.leaderstats.money
-end
-
-
--- add money to player
-function dataManager:addMoney(player, count)
-	-- get money instance
-	local money = self:getMoney(player)
-	money.Value += count
-end
-
-
--- add money to everyone in the list
-function dataManager:addMoneyList(playerList, count)
-	for _, player in pairs(playerList) do
-		self:addMoney(player, count)
-	end
-end
-
--- 2) storage system
-
--- save data to dataStore
-function dataManager:saveData(player)
-	-- use user ID as unique key for dataStore
-	local key = player.UserId
-	-- get current player money
-	local moneyValue = self:getMoney(player).Value
-
-	-- save data
-	local success, err = pcall(function()
-		-- using SetAsync because only triggered when player leaves
-		moneyDS:SetAsync(key, moneyValue)
-	end)
-
-	if not success then
-		warn("Failed to save money. userID:", key ," error:", tostring(err))
-		return
-	end
-end
-
--- load data from dataStore
-function dataManager:loadData(player)
-	-- use user ID as unique key for dataStore
-	local key = player.UserId
-	local moneyValue
-
-	-- get data from dataStore. Kick if not succsess
-	local success, err = pcall(function()
-		moneyValue = moneyDS:GetAsync(key)
-	end)
-	if not success then
-		warn("Failed to load money. userID:", key ," error:", tostring(err))
-		player:Kick("Error occured. Please, rejoin the game")
-		return
-	end
-
-	-- get player money
-	local money = self:getMoney(player)
-	-- default value if data not found or new player
-	money.Value = moneyValue or 0
-end
-
-return dataManager
-
--- PortalManager
-------------------------------------------------------
-
-local playersS = game:GetService("Players")
-
-local portalModule = require(script.Parent.portalModule)
-
-local PortalManager = {}
-
-local function _getPlayerFromPart(part)
-	local char = part:FindFirstAncestorWhichIsA("Model") -- check only "model" instances to optimize loop
-	if not char then
-		return nil
-	end
-
-	-- get player who touched
-	local player = playersS:GetPlayerFromCharacter(char)
-	if not player then
-		return nil
-	end
-
-	return player
-end
-
--- main function that make portal from instance
-function PortalManager.manageTeleport(portalInstance:Instance, placeID:number, config)
-	-- init portal logic (Gui events, timer, capacity)
-	local portal = portalModule.New(placeID, config)
-
-	-- portal enter
-	portalInstance.Touched:Connect(function(part)
-		local player = _getPlayerFromPart(part)
-		if not player then
-			return
-		end
-
-		-- start teleport if first player
-		portal:AddPlayer(player)
-	end)
-
-	-- portal exit
-	portalInstance.TouchEnded:Connect(function(part)
-		-- get player who touched
-		local player = _getPlayerFromPart(part)
-		if not player then
-			return
-		end
-		-- stop teleport if nobody in
-		portal:RemovePlayer(player)
-	end)
-end
-
-return PortalManager
 
 -- portalModule
 ------------------------------------------------------
@@ -285,6 +141,214 @@ end
 return Portal
 
 
+-- animationModule
+------------------------------------------------------
+local RS = game:GetService("ReplicatedStorage")
+local TweenS = game:GetService("TweenService")
+
+local animationModule = {}
+
+-- set default config if not provided
+local defaultConfig = {
+	jiggleDistance = -0.3,
+	animationDuration = 2,
+	animationType = Enum.EasingStyle.Elastic,
+}
+
+
+-- init animation module on object
+function animationModule.New(object, config)
+	local self = setmetatable({}, {__index = animationModule})
+	self.config = config or defaultConfig
+	self.object = object
+	self.defaultObjectPosition = object.Position
+	
+	return self
+end
+
+-- make object 'jiggle' on activation
+function animationModule:doAnimation()
+	-- offset object by jiggleDistance and set new position 
+	self.object.Position = (CFrame.new(self.object.Position, self.object.Position + Vector3.one.Unit) * CFrame.new(0, 0, self.config.jiggleDistance)).Position
+
+	-- create animation from new position to default position
+	local tweenInfo = TweenInfo.new(self.config.animationDuration, self.config.animationType)
+	local tween = TweenS:Create(self.object, tweenInfo, {Position = self.defaultObjectPosition})
+
+	-- do animation without checking completion - its gonna return to default postion anyway
+	tween:Play()
+end
+
+return animationModule
+
+-- dataManager
+------------------------------------------------------
+
+local dataStoreS = game:GetService("DataStoreService")
+local moneyDS = dataStoreS:GetDataStore("money")
+
+dataManager = {}
+
+-- init money statistics for the player
+function dataManager._initMoney(player)
+	-- leaderstats - roblox gui in right top corner
+	local leaderboard = Instance.new("Folder")
+	leaderboard.Name = "leaderstats"
+	leaderboard.Parent = player
+
+	-- init money instance for player. Default zero
+	local money = Instance.new("IntValue")
+	money.Name = "money"
+	money.Value = 0
+	money.Parent = leaderboard
+end
+
+-- get player money instance, if not- create
+function dataManager:getMoney(player)
+	-- if player already have leaderstats
+	if not player:FindFirstChild("leaderstats") then
+		self._initMoney(player)
+	end
+	return player.leaderstats.money
+end
+
+
+-- add money to player
+function dataManager:addMoney(player, count)
+	-- get money instance
+	local money = self:getMoney(player)
+	money.Value += count
+end
+
+
+-- add money to everyone in the list
+function dataManager:addMoneyList(playerList, count)
+	for _, player in pairs(playerList) do
+		self:addMoney(player, count)
+	end
+end
+
+-- 2) SERVER SIDE
+-- managers
+------------------------------------------------------
+
+-- dataManager
+
+-- save data to dataStore
+function dataManager:saveData(player)
+	-- use user ID as unique key for dataStore
+	local key = player.UserId
+	-- get current player money
+	local moneyValue = self:getMoney(player).Value
+
+	-- save data
+	local success, err = pcall(function()
+		-- using SetAsync because only triggered when player leaves
+		moneyDS:SetAsync(key, moneyValue)
+	end)
+
+	if not success then
+		warn("Failed to save money. userID:", key ," error:", tostring(err))
+		return
+	end
+end
+
+-- load data from dataStore
+function dataManager:loadData(player)
+	-- use user ID as unique key for dataStore
+	local key = player.UserId
+	local moneyValue
+
+	-- get data from dataStore. Kick if not succsess
+	local success, err = pcall(function()
+		moneyValue = moneyDS:GetAsync(key)
+	end)
+	if not success then
+		warn("Failed to load money. userID:", key ," error:", tostring(err))
+		player:Kick("Error occured. Please, rejoin the game")
+		return
+	end
+
+	-- get player money
+	local money = self:getMoney(player)
+	-- default value if data not found or new player
+	money.Value = moneyValue or 0
+end
+
+return dataManager
+
+-- PortalManager
+------------------------------------------------------
+
+local playersS = game:GetService("Players")
+
+local portalModule = require(script.Parent.portalModule)
+local animationModule = require(script.Parent.animationModule)
+
+local PortalManager = {}
+
+local function _getPlayerFromPart(part)
+	local char = part:FindFirstAncestorWhichIsA("Model") -- check only "model" instances to optimize loop
+	if not char then
+		return
+	end
+
+	-- get player who touched
+	local player = playersS:GetPlayerFromCharacter(char)
+	if not player then
+		return
+	end
+
+	return player
+end
+
+-- main function that make portal from instance
+function PortalManager.manageTeleport(portalInstance:Instance, placeID:number, config)
+	-- init portal logic (Gui events, timer, capacity)
+	local portal = portalModule.New(placeID, config)
+	local animation = animationModule.New(portalInstance)
+
+	-- portal enter
+	portalInstance.Touched:Connect(function(part)
+		local player = _getPlayerFromPart(part)
+		if not player then
+			return
+		end
+		
+		-- check if player already inside
+		if portal:playerIsInside(player) then
+			return
+		end
+		
+		-- perform animation on join
+		animation:doAnimation()
+		-- add player; start teleport if first player
+		portal:AddPlayer(player)
+	end)
+
+	-- portal exit
+	portalInstance.TouchEnded:Connect(function(part)
+		-- get player who touched
+		local player = _getPlayerFromPart(part)
+		if not player then
+			return
+		end
+		
+		-- check if player not inside
+		if not portal:playerIsInside(player) then
+			return
+		end
+		
+		-- perform animation on exit
+		animation:doAnimation()
+		-- stop teleport if nobody in
+		portal:RemovePlayer(player)
+	end)
+end
+
+return PortalManager
+
+
 -- shopManager
 ------------------------------------------------------
 
@@ -339,6 +403,8 @@ end
 
 return ShopManager
 
+
+-- 3) SERVER SIDE
 -- main
 ------------------------------------------------------
 
@@ -387,55 +453,7 @@ ShopManager:addProduct(products.coins400, workspace.smallShop.ProximityPrompt, f
 	dataManager:addMoney(player, 400)
 end)
 
-
-
-
--- doAnimation MAGICBLOCK
-------------------------------------------------------
-local RS = game:GetService("ReplicatedStorage")
-local TweenS = game:GetService("TweenService")
-
-dataManager = require(script.Parent.Parent.modules.dataManager)
-
-
--- set default position to perform animation
-local magicBlock = workspace:WaitForChild("magicBlock")
-local defaultPosition = magicBlock.Position
-
-local config = {
-	jiggleDistance = -5,
-	animationDuration = 3,
-	animationType = Enum.EasingStyle.Elastic,
-	moneyReward = 2
-}
-
-
-
--- make object 'jiggle' on activation
-local function doAnimation(player, object, direction)
-	if object ~= magicBlock then -- save server-side check 
-		return
-	end
-	
-	-- set new object position 
-	object.Position = (CFrame.new(object.Position, object.Position + direction.Unit) * CFrame.new(0, 0, config.jiggleDistance)).Position
-	
-	-- create animation from new position to default position
-	local tweenInfo = TweenInfo.new(config.animationDuration, config.animationType)
-	local tween = TweenS:Create(object, tweenInfo, {Position = defaultPosition})
-	
-	-- do animation without checking completion - it's gonna return to default postion anyway
-	tween:Play()
-	
-	-- add money to the player
-	dataManager:addMoney(player, config.moneyReward)
-end
-
--- connect event to animation function
-RS.events.doAnimation.OnServerEvent:Connect(doAnimation)
-
-
--- 2) CLIENT SIDE
+-- 4) CLIENT SIDE
 ------------------------------------------------------
 
 -- guiController (StarterPlayerScript)
@@ -492,70 +510,3 @@ updatePlayerCountEvent.OnClientEvent:Connect(function(playerCount, maxPartySize)
 	end
 	currentGui.playersCount.Text = playerCount.."/"..maxPartySize
 end)
-
-
--- toolRaycaster (tool local script) MAGICBLOCK 
-------------------------------------------------------
-local userInputS = game:GetService("UserInputService")
-local playersS = game:GetService("Players")
-local replicatedStorageS = game:GetService("ReplicatedStorage")
-
-
-local tool = script.Parent
-
-local raycastLenght = 1000
-local raycastParams = RaycastParams.new()
-raycastParams.FilterDescendantsInstances = {playersS.LocalPlayer.Character}
-
-
--- do raycast from camera to mouse to get world mouse position
-local function getMousePosition()
-	-- get mouse location on screen
-	local mousePosition = userInputS:GetMouseLocation()
-
-	-- make ray from mouse position 
-	local rayToMouse = workspace.CurrentCamera:ViewportPointToRay(mousePosition.x, mousePosition.y)
-	local directionVector = rayToMouse.Direction * raycastLenght
-	
-	-- do raycast
-	local raycastResult = workspace:Raycast(rayToMouse.Origin, directionVector, raycastParams)
-	if raycastResult then
-		return raycastResult.Position
-	end
-end
-
--- do raycast from tool to mouse
-function raycastFromTool()
-	-- get mouse position in workspace
-	local mouseLocation = getMousePosition()
-	if not mouseLocation then
-		return
-	end
-	
-	-- make vector from tool to mouse
-	local direction = (mouseLocation - tool.Handle.Position).Unit
-	local directionVector = direction * raycastLenght
-
-	-- do raycast
-	local raycastResult = workspace:Raycast(tool.Handle.Position, directionVector, raycastParams)
-	if not raycastResult then
-		return
-	end
-	
-	local HitObject = raycastResult.Instance
-	return HitObject, direction
-end
-
--- target to hit for event 
-local hitTarget = workspace:WaitForChild("magicBlock")
-
--- check if tool is activated and casted on target 
-local function toolActivated()
-	local hittedObject, direction = raycastFromTool()
-	if hittedObject and hittedObject == hitTarget then -- not safe client-side check, to evade server spam
-		replicatedStorageS.events.doAnimation:FireServer(hittedObject, direction)
-	end
-end
-
--- connect tool activation
-tool.Activated:Connect(toolActivated)
