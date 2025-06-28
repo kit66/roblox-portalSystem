@@ -140,47 +140,6 @@ end
 
 return Portal
 
-
--- animationModule
-------------------------------------------------------
-local RS = game:GetService("ReplicatedStorage")
-local TweenS = game:GetService("TweenService")
-
-local animationModule = {}
-
--- set default config if not provided
-local defaultConfig = {
-	jiggleDistance = -0.3,
-	animationDuration = 2,
-	animationType = Enum.EasingStyle.Elastic,
-}
-
-
--- init animation module on object
-function animationModule.New(object, config)
-	local self = setmetatable({}, {__index = animationModule})
-	self.config = config or defaultConfig
-	self.object = object
-	self.defaultObjectPosition = object.Position
-	
-	return self
-end
-
--- make object 'jiggle' on activation
-function animationModule:doAnimation()
-	-- offset object by jiggleDistance and set new position 
-	self.object.Position = (CFrame.new(self.object.Position, self.object.Position + Vector3.one.Unit) * CFrame.new(0, 0, self.config.jiggleDistance)).Position
-
-	-- create animation from new position to default position
-	local tweenInfo = TweenInfo.new(self.config.animationDuration, self.config.animationType)
-	local tween = TweenS:Create(self.object, tweenInfo, {Position = self.defaultObjectPosition})
-
-	-- do animation without checking completion - its gonna return to default postion anyway
-	tween:Play()
-end
-
-return animationModule
-
 -- dataManager
 ------------------------------------------------------
 
@@ -283,7 +242,6 @@ return dataManager
 local playersS = game:GetService("Players")
 
 local portalModule = require(script.Parent.portalModule)
-local animationModule = require(script.Parent.animationModule)
 
 local PortalManager = {}
 
@@ -306,7 +264,6 @@ end
 function PortalManager.manageTeleport(portalInstance:Instance, placeID:number, config)
 	-- init portal logic (Gui events, timer, capacity)
 	local portal = portalModule.New(placeID, config)
-	local animation = animationModule.New(portalInstance)
 
 	-- portal enter
 	portalInstance.Touched:Connect(function(part)
@@ -320,8 +277,6 @@ function PortalManager.manageTeleport(portalInstance:Instance, placeID:number, c
 			return
 		end
 		
-		-- perform animation on join
-		animation:doAnimation()
 		-- add player; start teleport if first player
 		portal:AddPlayer(player)
 	end)
@@ -339,8 +294,6 @@ function PortalManager.manageTeleport(portalInstance:Instance, placeID:number, c
 			return
 		end
 		
-		-- perform animation on exit
-		animation:doAnimation()
 		-- stop teleport if nobody in
 		portal:RemovePlayer(player)
 	end)
