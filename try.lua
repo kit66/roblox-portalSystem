@@ -265,7 +265,7 @@ local abilitiesConfig = {
 --------
 local function boostAbilityIfPremium(player: Player, abilityConfig: AbilityData) : AbilityData
 	-- any group
-	if player.MembershipType ~= Enum.MembershipType.Premium then return end
+	if player.MembershipType ~= Enum.MembershipType.Premium then return abilityConfig end
 	
 	local newAbilityConfig = table.clone(abilityConfig)
 	newAbilityConfig.damage *= 2
