@@ -101,7 +101,7 @@
 	--------
 	local abilitiesConfig = {
 		["Fireball"] = {
-			damage = 10,
+			damage = 40,
 			cooldown = 1,
 			travelTime = 2,
 			speed = 20,
@@ -211,7 +211,7 @@
 			end,
 		},
 		["silenceRing"] = {
-			damage = 10,
+			damage = 20,
 			cooldown = 4,
 			stayTime = 0.3,
 			SilenceDuration = 5,
