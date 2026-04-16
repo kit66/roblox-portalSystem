@@ -11,6 +11,7 @@ local castFunction = RS:WaitForChild("cast")
 local Abilities = {}
 Abilities.__index = Abilities
 
+-- types for abilities
 type AbilitiesType = typeof(setmetatable( {} :: AbilityData, Abilities))
 
 type AbilityData = {
@@ -52,14 +53,11 @@ end
 local States = {}
 States.__index = States
 
+-- types for states
 type StateName = "Idle" | "Silenced"
 
 type StatesType = typeof(setmetatable( {} :: { current: StateName, SilenceFunc: thread?}, States))
-
-type PlayerStateData = {
-	state: StatesType,
-	abilities: {[string]: AbilitiesType},
-}		
+	
 
 -- init new state object
 function States.new(): StatesType
@@ -99,8 +97,11 @@ function States:setSilence(duration: number)
 	end)
 end
 
-
-
+-- table for storing player state and registered abilities
+type PlayerStateData = {
+	state: StatesType,
+	abilities: {[string]: AbilitiesType},
+}	
 local playersRegister: {[number]: PlayerStateData} = {}
 
 -- heal player and reset cooldown on every ability
