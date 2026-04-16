@@ -1,12 +1,20 @@
 -- services
-local RS = game:GetService("ReplicatedStorage")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local Debris = game:GetService("Debris")
+local CollectionService = game:GetService("CollectionService")
+
+-- data store
+local DataStoreService = game:GetService("DataStoreService")
+local playerDataStore = DataStoreService:GetDataStore("PlayerData")
+
+-- projectiles has to have "projectile" tag
+local PROJECTILE_TAG = "projectile"
 
 -- get player current camera direction (cframe.LookVector) 
-local GetCameraDirectionFunction = RS:WaitForChild("getCameraDirection")
+local GetCameraDirectionFunction = ReplicatedStorage:WaitForChild("getCameraDirection")
 -- remote ability cast request
-local castFunction = RS:WaitForChild("cast")
+local castFunction = ReplicatedStorage:WaitForChild("cast")
 
 local Abilities = {}
 Abilities.__index = Abilities
@@ -64,11 +72,6 @@ function States.new(): StatesType
 	return setmetatable({current = "Idle"}, States)
 end
 
--- set player state
-function States:setState(newState: StateName)
-	self.current = newState
-end
-
 -- remove silence state and cancel removeSilenceTask
 function States:CancelSilence()
 	-- cancel current removeSilenceTask
@@ -97,12 +100,96 @@ function States:setSilence(duration: number)
 	end)
 end
 
+-- initialize player leaderstats
+local function initLeaderstats(player)
+	local data = getData(player)
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	leaderstats.Parent = player
+
+	local kills = Instance.new("IntValue")
+	kills.Name = "kills"
+	kills.Parent = leaderstats
+	kills.Value = data.kills
+end
+
+
+-- type for data
+type playerData = {
+	kills: number,
+}
+
+-- data storage
+local data = {} :: {[number]: playerData}
+
+local defaultData: playerData = {
+	kills = 0
+}
+
+-- get full player data from storage
+function getData(player: Player)
+	return data[player.UserId]
+end
+
+-- set full player data to storage
+function setData(player: Player, newData: playerData)
+	data[player.UserId] = newData
+end
+
+-- get player kills from storage
+function getKills(player: Player)
+	return data[player.UserId]["kills"] 
+end
+
+-- increment player kills in storage and leaderstats
+function incrementKills(player: Player)
+	data[player.UserId]["kills"] += 1
+	player.leaderstats.kills.Value += 1
+end
+
+
+-- save data to dataStore
+local function saveData(player: Player)
+	-- get what to save
+	local dataToSave = getData(player)
+	if not dataToSave then return end
+
+	-- try to save
+	local maxRetries = 3
+	for i = 1, maxRetries do
+		local success, err = pcall(function()
+			playerDataStore:UpdateAsync(player.UserId, function(old)
+				return dataToSave
+			end)
+		end)
+		
+		if success then return end
+		warn("Save attempt " .. i .. " failed for " .. player.Name .. ": " .. err)
+		if i < maxRetries then task.wait(3) end
+	end
+	warn("All save attempts failed for " .. player.Name)
+end
+
+-- load data from dataStore
+local function loadData(player: Player)	
+	-- try to get
+	local success, saved = pcall(function()
+		return playerDataStore:GetAsync(player.UserId)
+	end)
+	
+	-- set data anyway: from store or default 
+	setData(player, (success and saved) or table.clone(defaultData))
+	
+	initLeaderstats(player)
+end
+
+
 -- table for storing player state and registered abilities
-type PlayerStateData = {
+type playerRegister = {
 	state: StatesType,
 	abilities: {[string]: AbilitiesType},
 }	
-local playersRegister: {[number]: PlayerStateData} = {}
+local playersRegister: {[number]: playerRegister} = {}
 
 -- heal player and reset cooldown on every ability
 local function refreshPlayer(player)
@@ -113,6 +200,16 @@ local function refreshPlayer(player)
 		ability:refresh()
 	end
 end
+
+-- apply damage to target and return true if target died
+local function applyDamage(Target: Humanoid, damage: number): boolean
+	local oldHealth = Target.Health
+
+	Target:TakeDamage(damage)
+
+	return oldHealth > 0 and Target.Health <= 0
+end
+
 
 -- config
 local abilitiesConfig = {
@@ -128,14 +225,16 @@ local abilitiesConfig = {
 			local lookDirection = GetCameraDirectionFunction:InvokeClient(player)
 
 			-- Spawn projectile slightly in front of the character in camera direction
-			local fireball = RS:WaitForChild("fireball"):Clone()
+			local fireball = ReplicatedStorage:WaitForChild("fireball"):Clone()
 			fireball.Position = player.Character:WaitForChild("HumanoidRootPart").Position + lookDirection * 2 + Vector3.new(0, 1, 0)
 			fireball.Parent = workspace:WaitForChild("Projectiles")
 			
-			-- apply velocity with speed
-			local velocity = Instance.new("BodyVelocity")
-			velocity.Velocity = lookDirection.Unit * self.config.speed
-			velocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+			-- apply velocity to attachemnt in fireball
+			local velocity = Instance.new("LinearVelocity")
+			velocity.Attachment0 = fireball.Attachment
+			velocity.VectorVelocity = lookDirection.Unit * self.config.speed
+			velocity.MaxForce = math.huge
+			velocity.RelativeTo = Enum.ActuatorRelativeTo.World
 			velocity.Parent = fireball
 			
 			-- destroy projectile after travel time if not collided with anyting
@@ -144,8 +243,8 @@ local abilitiesConfig = {
 			local damaged = {}
 
 			fireball.Touched:Connect(function(otherPart: BasePart)
-				-- do not destroy if collided with any other projectile (projecties folder)
-				if otherPart:FindFirstAncestorWhichIsA("Folder") == fireball.Parent then return end
+				-- do not destroy if collided with any other projectile
+				if otherPart:HasTag(PROJECTILE_TAG) then return end
 
 				local character = otherPart:FindFirstAncestorWhichIsA("Model")
 				if character then 
@@ -165,14 +264,14 @@ local abilitiesConfig = {
 
 					local oldHealth = humanoid.Health
 					
-					humanoid:TakeDamage(self.config.damage)
-
+					local dead = applyDamage(humanoid, self.config.damage)
+					if not dead then return end
+										
+					incrementKills(player)
 					-- bonus on kill - only for fireball
-					if oldHealth > 0 and humanoid.Health <= 0 then
-						refreshPlayer(player)
-						-- update cooldown timer on client
-						castFunction:InvokeClient(player)
-					end
+					refreshPlayer(player)
+					-- update cooldown timer on client
+					castFunction:InvokeClient(player)	
 				else
 					-- collided with something else
 					fireball:Destroy()
@@ -198,7 +297,7 @@ local abilitiesConfig = {
 			local flatDirection = Vector3.new(lookDirection.X, 0, lookDirection.Z)
 			
 			-- spawn cone in camera direction without vertical component
-			local conus = RS:WaitForChild("conus"):Clone()
+			local conus = ReplicatedStorage:WaitForChild("conus"):Clone()
 			conus:PivotTo(CFrame.lookAt(position, position + flatDirection.Unit))
 			conus.Parent = workspace:WaitForChild("Projectiles")
 
@@ -227,7 +326,10 @@ local abilitiesConfig = {
 						if damaged[humanoid] then continue end
 						damaged[humanoid] = true
 
-						humanoid:TakeDamage(self.config.damage)
+						local dead = applyDamage(humanoid, self.config.damage)
+						if not dead then continue end
+						
+						incrementKills(player)
 					end
 					task.wait(0.5)
 				end	
@@ -246,7 +348,7 @@ local abilitiesConfig = {
 			local position = player.Character:WaitForChild("HumanoidRootPart").Position 
 			
 			-- ring around player
-			local ring = RS:WaitForChild("ring"):Clone()
+			local ring = ReplicatedStorage:WaitForChild("ring"):Clone()
 			ring:PivotTo(CFrame.new(position))
 			ring.Parent = workspace:WaitForChild("Projectiles")
 			
@@ -277,7 +379,10 @@ local abilitiesConfig = {
 					playersRegister[targetPlayer.UserId].state:setSilence(self.config.SilenceDuration)
 				end
 				
-				humanoid:TakeDamage(self.config.damage)
+				local dead = applyDamage(humanoid, self.config.damage)
+				if not dead then continue end
+				
+				incrementKills(player)
 			end
 		end,
 	},
@@ -292,6 +397,8 @@ local abilitiesConfig = {
 		end,
 	}
 }
+
+
 
 -- boost ability config if players has premium
 local function boostAbilityIfPremium(player: Player, abilityConfig: AbilityData) : AbilityData
@@ -329,6 +436,7 @@ end
 
 local function onPlayerAdded(player: Player)
 	-- register every skill for player and state
+	loadData(player)
 	playersRegister[player.UserId] = {
 		state = States.new(),
 		-- could be skills from dataStore that player have (buyed or obtained), but for now - fixed list of skills
@@ -343,9 +451,17 @@ end
 
 local function onPlayerRemoved(player: Player)
 	-- clear space in memory
+	saveData(player)
 	playersRegister[player.UserId] = nil
+end
+
+local function saveEverbodyData()
+	for _, player in Players:GetPlayers() do
+		saveData(player)
+	end
 end
 
 castFunction.OnServerInvoke = castSpellRequest
 Players.PlayerAdded:Connect(onPlayerAdded)
 Players.PlayerRemoving:Connect(onPlayerRemoved)
+game:BindToClose(saveEverbodyData)
