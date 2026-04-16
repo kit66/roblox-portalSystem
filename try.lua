@@ -3,9 +3,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local Debris = game:GetService("Debris")
 local CollectionService = game:GetService("CollectionService")
+local DataStoreService = game:GetService("DataStoreService")
 
 -- data store
-local DataStoreService = game:GetService("DataStoreService")
 local playerDataStore = DataStoreService:GetDataStore("PlayerData")
 
 -- projectiles has to have "projectile" tag
