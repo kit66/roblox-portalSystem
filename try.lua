@@ -56,7 +56,7 @@ States.__index = States
 -- types for states
 type StateName = "Idle" | "Silenced"
 
-type StatesType = typeof(setmetatable( {} :: { current: StateName, SilenceFunc: thread?}, States))
+type StatesType = typeof(setmetatable( {} :: { current: StateName, removeSilenceTask: thread?}, States))
 	
 
 -- init new state object
@@ -69,30 +69,30 @@ function States:setState(newState: StateName)
 	self.current = newState
 end
 
--- remove silence state and cancel silence thread
+-- remove silence state and cancel removeSilenceTask
 function States:CancelSilence()
-	-- cancel any current cancelling silence thread
-	if self.SilenceFunc then
-		task.cancel(self.SilenceFunc)
+	-- cancel current removeSilenceTask
+	if self.removeSilenceTask then
+		task.cancel(self.removeSilenceTask)
 	end
 	-- set default state
 	self.current = "Idle"
-	self.SilenceFunc = nil
+	self.removeSilenceTask = nil
 end
 
--- set silence state and start silence thread
+-- set silence state and create removeSilenceTask
 function States:setSilence(duration: number)
-	-- cancel any current cancelling silence to prevent from stacking silence
-	if self.SilenceFunc then
-		task.cancel(self.SilenceFunc)
+	-- cancel any current removeSilenceTask to prevent from stacking
+	if self.removeSilenceTask then
+		task.cancel(self.removeSilenceTask)
 	end
 
 	self.current = "Silenced"
 
-	-- remove silence in thread after duration
-	self.SilenceFunc = task.delay(duration, function()
-		--prevent check for the same thread
-		self.SilenceFunc = nil  
+	-- remove silence in task after duration
+	self.removeSilenceTask = task.delay(duration, function()
+		--prevent check for the same call
+		self.removeSilenceTask = nil  
 		self:CancelSilence()
 	end)
 end
@@ -238,15 +238,14 @@ local abilitiesConfig = {
 		damage = 20,
 		cooldown = 4,
 		stayTime = 0.3,
-		SilenceDuration = 5,
-
-		allowCastStates = {"Idle"},
+		SilenceDuration = 10,
+		
+		allowCastStates = {"Idle", "Silenced"}, -- could be cast when silenced for demostrate purpose
 
 		onActivate = function (self, player)
-			-- ring around player
 			local position = player.Character:WaitForChild("HumanoidRootPart").Position 
 			
-			-- spawn ring in player
+			-- ring around player
 			local ring = RS:WaitForChild("ring"):Clone()
 			ring:PivotTo(CFrame.new(position))
 			ring.Parent = workspace:WaitForChild("Projectiles")
@@ -269,7 +268,7 @@ local abilitiesConfig = {
 				local humanoid = character:FindFirstChild("Humanoid")
 				if not humanoid then continue end
 
-				-- do not damage same humanoid twice
+				-- do not damage/silence same humanoid twice
 				if damaged[humanoid] then continue end
 				damaged[humanoid] = true
 
@@ -285,7 +284,7 @@ local abilitiesConfig = {
 	["cleanse"] = {
 		cooldown = 10,
 
-		-- could be activated only when silenced () by 'ring' ability
+		-- could be activated only when silenced 
 		allowCastStates = {"Silenced"},
 
 		onActivate = function (self, player)
@@ -343,7 +342,7 @@ local function onPlayerAdded(player: Player)
 end
 
 local function onPlayerRemoved(player: Player)
-	-- GC automatically cleanup metatables inside
+	-- clear space in memory
 	playersRegister[player.UserId] = nil
 end
 
