@@ -455,6 +455,7 @@ local function onPlayerRemoved(player: Player)
 	playersRegister[player.UserId] = nil
 end
 
+-- save data of player
 local function saveEverbodyData()
 	for _, player in Players:GetPlayers() do
 		saveData(player)
@@ -466,6 +467,7 @@ Players.PlayerAdded:Connect(onPlayerAdded)
 Players.PlayerRemoving:Connect(onPlayerRemoved)
 game:BindToClose(saveEverbodyData)
 
+-- autosave with timer
 local TIME_BETWEEN_SAVE = 300
 task.spawn(function()
 	while task.wait(TIME_BETWEEN_SAVE) do
