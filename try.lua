@@ -524,6 +524,14 @@ local function onPlayerAdded(player: Player)
 			cleanse     = Abilities.new(abilitiesConfig.cleanse, abilitiesHanlders.cleanse),
 		},
 	}
+	
+	player.CharacterAdded:Connect(function(character)
+		castCleanse({}, player)
+	end)
+	
+	player.CharacterRemoving:Connect(function(character)
+		castCleanse({}, player)
+	end)
 end
 
 local function onPlayerRemoved(player: Player)
