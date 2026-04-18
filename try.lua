@@ -56,7 +56,7 @@ end
 local States = {}
 States.__index = States
 
-type StateName = "Idle" | "Silenced" | "Stunned" | "Poisoned"
+type StateName = "Silenced" | "Stunned" | "Poisoned"
 
 type StateTasks = {
 	mainTask: thread?,
@@ -524,6 +524,14 @@ local function onPlayerAdded(player: Player)
 			cleanse     = Abilities.new(abilitiesConfig.cleanse, abilitiesHanlders.cleanse),
 		},
 	}
+	
+	player.CharacterAdded:Connect(function(character)
+		castCleanse({}, player)
+	end)
+	
+	player.CharacterRemoving:Connect(function(character)
+		castCleanse({}, player)
+	end)
 end
 
 local function onPlayerRemoved(player: Player)
