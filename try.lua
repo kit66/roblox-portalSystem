@@ -3,7 +3,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage") 
 local Players = game:GetService("Players")
 local Debris = game:GetService("Debris") 
-local CollectionService = game:GetService("CollectionService") 
 local DataStoreService = game:GetService("DataStoreService")
 local RunService = game:GetService("RunService")
 
@@ -165,10 +164,6 @@ local function removeData(player: Player)
 	data[player.UserId] = nil
 end
 
-local function getKills(player: Player)
-	return data[player.UserId]["kills"] 
-end
-
 local function incrementKills(player: Player)
 	-- constant because could be gained only 1 kill per killed person
 	data[player.UserId]["kills"] += 1 
@@ -258,8 +253,14 @@ local function applyStunState(targetPlayer: Player, humanoid: Humanoid, duration
 		"Stunned",
 		duration,
 		-- game don't have any other ways to change speed/jump - safe constant use
-		function() humanoid.WalkSpeed = 0 humanoid.JumpHeight = 0 end,
-		function() humanoid.WalkSpeed = WALK_DEFAULT humanoid.JumpHeight = JUMP_DEFAULT end
+		function() 
+			humanoid.WalkSpeed = 0 
+			humanoid.JumpHeight = 0 
+		end,
+		function() 
+			humanoid.WalkSpeed = WALK_DEFAULT
+			humanoid.JumpHeight = JUMP_DEFAULT
+		end
 	)
 end
 
@@ -327,7 +328,10 @@ local function castFireball(config : {}, player : Player)
 		if otherPart:HasTag(PROJECTILE_TAG) then return end -- projectiles can't touch other projectiles
 
 		local character = otherPart:FindFirstAncestorWhichIsA("Model") -- player character cannot be not Model
-		if not character then fireball:Destroy() return end
+		if not character then 
+			fireball:Destroy() 
+			return
+		end
 
 		local targetPlayer = Players:GetPlayerFromCharacter(character) -- do not apply to skill owner 
 		if targetPlayer == player then return end	
@@ -405,8 +409,6 @@ local function castSilenceRing(config : {}, player: Player)
 	ring.Parent = workspace:WaitForChild("Projectiles")
 
 	Debris:AddItem(ring, config.stayTime)
-
-	local applied = {}
 	
 	-- apply effect only once when activated, destroy by debris after 'stayTime' for visual effect
 	forEachEnemyInPart(ring.ring, player, function(targetPlayer, player, humanoid)
@@ -427,8 +429,6 @@ local function castSlam(config : {}, player: Player)
 	slamRing.Parent = workspace:WaitForChild("Projectiles")
 
 	Debris:AddItem(slamRing, config.stayTime)
-
-	local applied = {}
 
 	-- apply effect only once when activated, destroy by debris after 'stayTime' for visual effect
 	forEachEnemyInPart(slamRing.ring, player, function(targetPlayer, player, humanoid)
