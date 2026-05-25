@@ -1,6 +1,6 @@
---// @SAME_KIT
+-- @SAME_KIT
 -- 2026
--- try.lua fight system.
+-- fightSystem.lua fight system.
 
 --// Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage") 
