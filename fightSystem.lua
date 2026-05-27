@@ -1,4 +1,4 @@
--- Discord: kit661 (displayed: kit) | Roblox: @SAME_KIT
+-- Discord: kit661 (displayed: kit) | Roblox: @same_kit
 -- may 2026
 -- fightSystem.lua fight system.
 
