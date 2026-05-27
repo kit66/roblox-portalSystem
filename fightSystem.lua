@@ -1,5 +1,5 @@
--- @SAME_KIT
--- 2026
+-- Discord: kit661 (displayed: kit) | Roblox: @SAME_KIT
+-- may 2026
 -- fightSystem.lua fight system.
 
 --// Services
